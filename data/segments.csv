@@ -1,0 +1,12 @@
+segment,stage,rail_score,reason,omnitrax_angle,commodity_type
+Steel mills,Production,5,Large inbound raw materials and outbound finished steel move well by rail,Serve mill sites with rail access and industrial development,Steel
+Scrap metal,Raw materials,5,Heavy bulk material often moves long distances to mills,Target recyclers and scrap yards near rail-served sites,Scrap Metal
+Steel service centers,Distribution,4,Coils plate and bar products often require heavy logistics,Offer rail-served distribution and transload sites,Steel
+Fabricators,Manufacturing,3,Some inbound steel can move by rail depending on volume,Help locate fabricators near customers and rail-served supply,Steel
+Automotive plants,End use,4,Steel inputs and finished components benefit from reliable logistics,Support supplier parks and rail-served industrial sites,Automotive
+Pipe and tube,Manufacturing,5,Heavy steel products are strong rail candidates,Target pipe producers serving energy construction and infrastructure markets,Pipe & Tube
+Construction materials,Manufacturing,4,Heavy building materials benefit from rail transportation,Support construction supply chains with rail access,Machinery
+Chemicals,Manufacturing,5,Bulk liquids resins and specialty chemicals often require railcar handling and transload options,Support rail-served chemical manufacturing storage and transload sites,Chemicals
+Energy,Infrastructure,4,Energy infrastructure requires reliable bulk transportation,Target energy corridors and industrial sites,Energy
+Machinery,Manufacturing,3,Heavy equipment components can move by rail,Support manufacturing hubs with rail connectivity,Machinery
+Warehousing/distribution,Distribution,4,Distribution centers benefit from rail-served logistics,Develop rail-served industrial and warehouse parks,Rail Services

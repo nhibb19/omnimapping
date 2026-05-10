@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Opportunity Workspace - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Opportunity Workspace</h1>
+    <div class="muted">{{ workspace.company.company }} + {{ workspace.site.site_name }}</div>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('company_detail', company_name=workspace.company.company) }}">Company Profile</a>
+    <a class="button" href="{{ url_for('site_detail', site_name=workspace.site.site_name) }}">Site Profile</a>
+    <a class="button primary" href="{{ url_for('company_site_comparison', company_name=workspace.company.company) }}">Compare Top Sites</a>
+    <a class="button" href="{{ url_for('download_workspace_json', company=workspace.company.company, site=workspace.site.site_name) }}">Download JSON</a>
+    <a class="button" href="{{ url_for('download_workspace_txt', company=workspace.company.company, site=workspace.site.site_name) }}">Download Brief</a>
+  </div>
+</div>
+
+<section class="section">
+  <h2>Decision Snapshot</h2>
+  <div class="metrics">
+    <div class="metric"><span class="muted">Priority score</span><strong>{{ workspace.priority.score }}/100</strong></div>
+    <div class="metric"><span class="muted">Compatibility</span><strong>{{ workspace.site_match.compatibility_score }}/100</strong></div>
+    <div class="metric"><span class="muted">State pair</span><strong>{{ workspace.company.state }} to {{ workspace.site.state }}</strong></div>
+  </div>
+</section>
+
+<div class="layout">
+  <div>
+    <section class="section">
+      <h2>Company</h2>
+      <p><strong>{{ workspace.company.company }}</strong></p>
+      <p>{{ workspace.company.location }} | {{ workspace.company.segment }} | {{ workspace.company.commodity }}</p>
+      <p class="muted">{{ workspace.company.company_info }}</p>
+      <h3>Priority Reasons</h3>
+      <ul class="clean">
+        {% for reason in workspace.priority.reasons %}
+          <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Why This Pair Fits</h2>
+      <ul class="clean">
+        {% for reason in workspace.site_match.matching_reasons %}
+          <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Talking Points</h2>
+      <ul class="clean">
+        {% for point in workspace.talking_points %}
+          <li>{{ point }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+
+  <aside>
+    <section class="section">
+      <h2>Site</h2>
+      <p><strong>{{ workspace.site.site_name }}</strong></p>
+      <p>{{ workspace.site.location }} | {{ workspace.site.acres or 'Unknown' }} acres</p>
+      <p>Rail {{ workspace.site.rail_served }} | Transload {{ workspace.site.transload_available }} | Port {{ workspace.site.port_access }}</p>
+      <p class="muted">{{ workspace.site.target_industries }}</p>
+    </section>
+
+    <section class="section">
+      <h2>Next Action</h2>
+      <p>{{ workspace.priority.next_action }}</p>
+    </section>
+
+    <section class="section">
+      <h2>Risks And Data Gaps</h2>
+      {% if workspace.priority.risk %}
+        <p>{{ workspace.priority.risk }}</p>
+      {% endif %}
+      <ul class="clean">
+        {% for gap in workspace.risks_or_data_gaps %}
+          <li>{{ gap }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </aside>
+</div>
+
+<section class="section">
+  <h2>Score Breakdown</h2>
+  <div class="breakdown">
+    {% for key, value in workspace.priority.breakdown.items() %}
+      <div class="breakdown-row">
+        <span>{{ key.replace('_', ' ').title() }}</span>
+        <strong>{{ value }}</strong>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

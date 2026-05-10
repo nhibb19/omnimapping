@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ comparison.company.company }} Site Comparison - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Company Site Comparison</h1>
+    <div class="muted">{{ comparison.company.company }} | {{ comparison.company.location }} | {{ comparison.company.segment }} | {{ comparison.company.commodity }}</div>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('company_detail', company_name=comparison.company.company) }}">Company Profile</a>
+    <a class="button" href="{{ url_for('download_company_site_comparison_json', company_name=comparison.company.company, limit=limit) }}">Download JSON</a>
+    <a class="button" href="{{ url_for('download_company_site_comparison_csv', company_name=comparison.company.company, limit=limit) }}">Download CSV</a>
+  </div>
+</div>
+
+<section class="section">
+  <h2>Decision Snapshot</h2>
+  <div class="metrics">
+    <div class="metric"><span class="muted">Priority score</span><strong>{{ comparison.priority.score }}/100</strong></div>
+    <div class="metric"><span class="muted">Sites compared</span><strong>{{ comparison.compared_sites|length }}</strong></div>
+    <div class="metric">
+      <span class="muted">First choice</span>
+      <strong>{{ comparison.recommended_first_choice.site_name if comparison.recommended_first_choice else 'None' }}</strong>
+    </div>
+  </div>
+  {% if comparison.recommended_first_choice %}
+    <p><strong>Recommended first-choice site:</strong> {{ comparison.recommended_first_choice.site_name }} at {{ comparison.recommended_first_choice.compatibility_score }}/100 compatibility.</p>
+    <ul class="clean">
+      {% for reason in comparison.recommended_first_choice.why %}
+        <li>{{ reason }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+<section class="section">
+  <h2>Company Basics</h2>
+  <div class="breakdown">
+    <div class="breakdown-row"><span>Location</span><strong>{{ comparison.company.location }}</strong></div>
+    <div class="breakdown-row"><span>Segment</span><strong>{{ comparison.company.segment }}</strong></div>
+    <div class="breakdown-row"><span>Commodity</span><strong>{{ comparison.company.commodity }}</strong></div>
+    <div class="breakdown-row"><span>Inbound</span><strong>{{ comparison.company.inbound_materials or 'Confirm' }}</strong></div>
+    <div class="breakdown-row"><span>Outbound</span><strong>{{ comparison.company.outbound_products or 'Confirm' }}</strong></div>
+  </div>
+</section>
+
+<section class="section">
+  <h2>Top Compatible Sites</h2>
+  {% if comparison.compared_sites %}
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Site</th>
+          <th>Compatibility</th>
+          <th>Location</th>
+          <th>Acres</th>
+          <th>Rail</th>
+          <th>Class 1</th>
+          <th>Transload</th>
+          <th>Interstate</th>
+          <th>Port</th>
+          <th>Target Industries</th>
+          <th>Reasons</th>
+          <th>Risks / Confirm</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for compared_site in comparison.compared_sites %}
+          {% set site = compared_site.site %}
+          <tr>
+            <td>{{ compared_site.rank }}</td>
+            <td><a href="{{ url_for('site_detail', site_name=site.site_name) }}"><strong>{{ site.site_name }}</strong></a></td>
+            <td class="score">{{ compared_site.compatibility_score }}/100</td>
+            <td>{{ site.location }}</td>
+            <td>{{ site.acres or 'Confirm' }}</td>
+            <td>{{ site.rail_served or 'Confirm' }}</td>
+            <td>{{ site.nearby_class1 or 'Confirm' }}</td>
+            <td>{{ site.transload_available or 'Confirm' }}</td>
+            <td>{{ site.interstate_access or 'Confirm' }}</td>
+            <td>{{ site.port_access or 'Confirm' }}</td>
+            <td>{{ site.target_industries or 'Confirm' }}</td>
+            <td>
+              <ul class="clean">
+                {% for reason in compared_site.matching_reasons %}
+                  <li>{{ reason }}</li>
+                {% endfor %}
+              </ul>
+            </td>
+            <td>
+              <ul class="clean">
+                {% for item in compared_site.risks_or_confirmation_items[:3] %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </td>
+            <td class="action-cell">
+              <a class="button primary small" href="{{ url_for('opportunity_workspace', company=comparison.company.company, site=site.site_name) }}">Workspace</a>
+              <a class="button small" href="{{ url_for('site_detail', site_name=site.site_name) }}">Site</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">No compatible sites are available for this company.</div>
+  {% endif %}
+</section>
+
+<section class="section">
+  <h2>Priority Reasons</h2>
+  <ul class="clean">
+    {% for reason in comparison.priority.reasons %}
+      <li>{{ reason }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

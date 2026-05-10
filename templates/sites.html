@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Industrial Sites - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Industrial Sites</h1>
+    <div class="muted">{{ filtered_count }} of {{ total_count }} sites shown | matched against {{ company_count }} companies</div>
+  </div>
+</div>
+
+<section class="filters">
+  <form class="grid" method="get" action="{{ url_for('sites') }}">
+    <div>
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" placeholder="Site, city, industry, gap" value="{{ filters.query or '' }}">
+    </div>
+    <div>
+      <label for="state">State</label>
+      <select id="state" name="state">
+        <option value="">All states</option>
+        {% for state in filter_options.states %}
+          <option value="{{ state }}" {% if filters.state == state %}selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="port_access">Port access</label>
+      <select id="port_access" name="port_access">
+        <option value="">Any</option>
+        {% for value in filter_options.port_access %}
+          <option value="{{ value }}" {% if filters.port_access == value %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="transload_available">Transload</label>
+      <select id="transload_available" name="transload_available">
+        <option value="">Any</option>
+        {% for value in filter_options.transload_available %}
+          <option value="{{ value }}" {% if filters.transload_available == value %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="source_confidence">Confidence</label>
+      <select id="source_confidence" name="source_confidence">
+        <option value="">Any</option>
+        {% for value in filter_options.source_confidences %}
+          <option value="{{ value }}" {% if filters.source_confidence == value %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="needs_confirmation">Confirmation</label>
+      <select id="needs_confirmation" name="needs_confirmation">
+        <option value="">Any</option>
+        <option value="yes" {% if filters.needs_confirmation == 'yes' %}selected{% endif %}>Needs confirmation</option>
+        <option value="no" {% if filters.needs_confirmation == 'no' %}selected{% endif %}>Current only</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="button primary" type="submit">Apply Filters</button>
+      <a class="button" href="{{ url_for('sites') }}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="scan-strip" aria-label="Site scan summary">
+  <div class="scan-item"><span class="muted">Ready sites</span><strong>{{ scan_summary.ready_sites }}</strong></div>
+  <div class="scan-item"><span class="muted">Need confirmation</span><strong>{{ scan_summary.needs_confirmation }}</strong></div>
+  <div class="scan-item"><span class="muted">Rail + transload</span><strong>{{ scan_summary.rail_transload }}</strong></div>
+  <div class="scan-item"><span class="muted">High confidence</span><strong>{{ scan_summary.high_confidence }}</strong></div>
+</section>
+
+{% if sites %}
+  <table>
+    <thead>
+      <tr>
+        <th>Site</th>
+        <th>Location</th>
+        <th>Acres</th>
+        <th>Rail</th>
+        <th>Transload</th>
+        <th>Port</th>
+        <th>Confidence</th>
+        <th>Status</th>
+        <th>Target Industries</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for site in sites %}
+        <tr>
+          <td><a href="{{ url_for('site_detail', site_name=site.site_name) }}"><strong>{{ site.site_name }}</strong></a></td>
+          <td>{{ site.location }}</td>
+          <td>{{ site.acres or 'Unknown' }}</td>
+          <td>{{ site.rail_served }}</td>
+          <td>{{ site.transload_available }}</td>
+          <td>{{ site.port_access }}</td>
+          <td>{{ site.source_confidence or 'Unspecified' }}</td>
+          <td>
+            {% if site.needs_confirmation %}
+              <span class="pill warn">Needs confirmation</span>
+              {% if site.data_quality_flags %}
+                <span class="subtle">{{ site.data_quality_flags | join(', ') }}</span>
+              {% endif %}
+            {% else %}
+              <span class="pill">Current</span>
+            {% endif %}
+          </td>
+          <td>{{ site.target_industries }}</td>
+          <td class="action-cell">
+            <a class="button primary small" href="{{ url_for('site_detail', site_name=site.site_name) }}">Review</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="empty">No sites match the current filters.</div>
+{% endif %}
+{% endblock %}

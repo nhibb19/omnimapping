@@ -1,0 +1,15 @@
+OmniMapping checkpoint: dashboard usability
+Date: 2026-05-06
+
+Focus:
+- Dashboard usability improvements for economic development users.
+- Faster scanning on ranked company and industrial site pages.
+- Better filters for quick text search and site confirmation status.
+- Clearer action buttons for review, workspace, compare, and downloads.
+- More visible data gap and confirmation language on company and site detail pages.
+
+Scoring:
+- Priority scoring and site compatibility scoring rules were not changed.
+
+Verification:
+- ./scripts/check.sh passed.

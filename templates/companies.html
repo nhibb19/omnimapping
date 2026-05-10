@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Ranked Companies - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Ranked Companies</h1>
+    <div class="muted">{{ filtered_count }} of {{ total_count }} companies shown by current filters</div>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('download_top_companies_csv', **request.args) }}">Download CSV</a>
+    <a class="button" href="{{ url_for('download_top_companies_json', **request.args) }}">Download JSON</a>
+  </div>
+</div>
+
+<section class="filters">
+  <form class="grid" method="get" action="{{ url_for('companies') }}">
+    <div>
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" placeholder="Company, city, site, lane" value="{{ filters.query or '' }}">
+    </div>
+    <div>
+      <label for="state">State</label>
+      <select id="state" name="state">
+        <option value="">All states</option>
+        {% for state in filter_options.states %}
+          <option value="{{ state }}" {% if filters.state == state %}selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="segment">Segment</label>
+      <select id="segment" name="segment">
+        <option value="">All segments</option>
+        {% for segment in filter_options.segments %}
+          <option value="{{ segment }}" {% if filters.segment == segment %}selected{% endif %}>{{ segment }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="commodity">Commodity</label>
+      <select id="commodity" name="commodity">
+        <option value="">All commodities</option>
+        {% for commodity in filter_options.commodities %}
+          <option value="{{ commodity }}" {% if filters.commodity == commodity %}selected{% endif %}>{{ commodity }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="min_score">Minimum score</label>
+      <input id="min_score" name="min_score" type="number" min="0" max="100" value="{{ filters.min_score if filters.min_score is not none else '' }}">
+    </div>
+    <div>
+      <label for="limit">Rows</label>
+      <input id="limit" name="limit" type="number" min="1" max="500" value="{{ limit }}">
+    </div>
+    <div class="filter-actions">
+      <button class="button primary" type="submit">Apply Filters</button>
+      <a class="button" href="{{ url_for('companies') }}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="scan-strip" aria-label="Company scan summary">
+  <div class="scan-item"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_for_outreach }}</strong></div>
+  <div class="scan-item"><span class="muted">Need site review</span><strong>{{ scan_summary.needs_site_review }}</strong></div>
+  <div class="scan-item"><span class="muted">Average priority</span><strong>{{ scan_summary.average_priority }}</strong></div>
+  <div class="scan-item"><span class="muted">Shown now</span><strong>{{ companies|length }}</strong></div>
+</section>
+
+{% if companies %}
+  <table>
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Company</th>
+        <th>Score</th>
+        <th>Segment</th>
+        <th>Location</th>
+        <th>Commodity</th>
+        <th>Best Site</th>
+        <th>Next Action</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for company in companies %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><a href="{{ url_for('company_detail', company_name=company.company) }}"><strong>{{ company.company }}</strong></a></td>
+          <td class="score">{{ safe_score(company.priority_score) }}/100</td>
+          <td>{{ company.segment }}</td>
+          <td>{{ format_company_location(company) }}</td>
+          <td>{{ company.commodity_type or company.commodity }}</td>
+          <td>
+            {% if company.best_site_name %}
+              <a href="{{ url_for('site_detail', site_name=company.best_site_name) }}">{{ company.best_site_name }}</a>
+              <span class="pill">{{ safe_score(company.best_site_match_score) }}/100</span>
+            {% else %}
+              <span class="muted">TBD</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ company.recommended_next_action }}
+            {% if not company.best_site_name %}
+              <span class="subtle">Data gap: confirm best-fit site before outreach.</span>
+            {% endif %}
+          </td>
+          <td class="action-cell">
+            <a class="button primary small" href="{{ url_for('company_detail', company_name=company.company) }}">Review</a>
+            {% if company.best_site_name %}
+              <a class="button secondary small" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">Workspace</a>
+            {% else %}
+              <a class="button secondary small" href="{{ url_for('company_site_comparison', company_name=company.company) }}">Compare</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="empty">No companies match the current filters.</div>
+{% endif %}
+{% endblock %}

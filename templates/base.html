@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}OmniMapping Dashboard{% endblock %}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --border: #d9dde3;
+      --text: #17202a;
+      --muted: #5b6470;
+      --accent: #0f6b5f;
+      --accent-strong: #084c44;
+      --warning: #8a5a00;
+      --score: #163c63;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+    a { color: var(--accent-strong); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    .brand { font-size: 19px; font-weight: 700; }
+    nav { display: flex; gap: 14px; flex-wrap: wrap; }
+    nav a { color: var(--text); font-weight: 600; }
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    h1, h2, h3 { margin: 0; line-height: 1.2; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 19px; margin-bottom: 10px; }
+    h3 { font-size: 15px; margin-bottom: 8px; }
+    .muted { color: var(--muted); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--text);
+      font-weight: 700;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    .button.secondary {
+      border-color: var(--accent);
+      color: var(--accent-strong);
+    }
+    .button.small {
+      min-height: 30px;
+      padding: 5px 9px;
+      font-size: 13px;
+    }
+    .filters {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 18px;
+    }
+    form.grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(130px, 1fr)) auto;
+      gap: 10px;
+      align-items: end;
+    }
+    .filter-actions {
+      display: flex;
+      gap: 8px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+    select, input {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 9px;
+      background: #ffffff;
+      color: var(--text);
+      font: inherit;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: #eef1f4;
+      letter-spacing: 0;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .score {
+      color: var(--score);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .nowrap { white-space: nowrap; }
+    .subtle {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 2px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 7px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #f9fafb;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill.warn {
+      border-color: #d7ad55;
+      background: #fff7e6;
+      color: var(--warning);
+    }
+    .status-line { margin-top: 8px; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 18px;
+    }
+    .scan-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .scan-item {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .scan-item strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1.1;
+    }
+    .gap-note {
+      border-left: 4px solid #d7ad55;
+      background: #fffaf0;
+      padding: 10px 12px;
+      margin: 10px 0;
+      color: #5f3d00;
+    }
+    .action-cell {
+      min-width: 142px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(120px, 1fr));
+      gap: 10px;
+    }
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfd;
+    }
+    .metric strong { display: block; font-size: 22px; }
+    .breakdown {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    ul.clean {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .empty {
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+    }
+    @media (max-width: 880px) {
+      header { position: static; }
+      .page-head, .topbar { flex-direction: column; align-items: stretch; }
+      .actions { justify-content: flex-start; }
+      form.grid, .layout, .metrics, .breakdown, .scan-strip { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div class="brand">OmniMapping Dashboard</div>
+      <nav>
+        <a href="{{ url_for('companies') }}">Ranked Companies</a>
+        <a href="{{ url_for('sites') }}">Industrial Sites</a>
+        <a href="{{ url_for('health') }}">Health</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

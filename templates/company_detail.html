@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ report.company_profile.company }} - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ report.company_profile.company }}</h1>
+    <div class="muted">{{ report.company_profile.segment }} | {{ report.company_profile.location }} | {{ report.company_profile.commodity }}</div>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('companies') }}">Back to companies</a>
+    <a class="button primary" href="{{ url_for('company_site_comparison', company_name=report.company_profile.company) }}">Compare Sites</a>
+    <a class="button" href="{{ url_for('download_company_report', company_name=report.company_profile.company) }}">Download JSON</a>
+  </div>
+</div>
+
+<section class="scan-strip" aria-label="Company scan summary">
+  <div class="scan-item"><span class="muted">Priority</span><strong>{{ report.priority.score }}/100</strong></div>
+  <div class="scan-item"><span class="muted">Best site fit</span><strong>{{ report.top_site_matches[0].compatibility_score if report.top_site_matches else 0 }}/100</strong></div>
+  <div class="scan-item"><span class="muted">Freight intensity</span><strong>{{ report.priority.freight_intensity_label or 'Review' }}</strong></div>
+  <div class="scan-item"><span class="muted">Site quality</span><strong>{{ report.priority.site_match_quality_label or 'Review' }}</strong></div>
+</section>
+
+<div class="layout">
+  <div>
+    <section class="section">
+      <h2>Priority</h2>
+      <div class="metrics">
+        <div class="metric"><span class="muted">Priority score</span><strong>{{ report.priority.score }}/100</strong></div>
+        <div class="metric"><span class="muted">Site quality</span><strong>{{ report.priority.site_match_quality_label }}</strong></div>
+        <div class="metric"><span class="muted">Freight intensity</span><strong>{{ report.priority.freight_intensity_label }}</strong></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Score Breakdown</h2>
+      <div class="breakdown">
+        {% for key, value in report.priority.breakdown.items() %}
+          <div class="breakdown-row">
+            <span>{{ key.replace('_', ' ').title() }}</span>
+            <strong>{{ value }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Priority Reasons</h2>
+      <ul class="clean">
+        {% for reason in report.priority.reasons %}
+          <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Company Data Gaps</h2>
+      {% set gap = namespace(found=false) %}
+      {% if not report.company_profile.inbound_materials %}
+        {% set gap.found = true %}
+        <div class="gap-note">Confirm inbound material volumes and routing before outreach.</div>
+      {% endif %}
+      {% if not report.company_profile.outbound_products %}
+        {% set gap.found = true %}
+        <div class="gap-note">Confirm outbound product flows and customer lanes before outreach.</div>
+      {% endif %}
+      {% if not report.company_profile.why_target %}
+        {% set gap.found = true %}
+        <div class="gap-note">Add a clearer prospect rationale before sharing externally.</div>
+      {% endif %}
+      {% if not gap.found %}
+        <p class="muted">Core company fields are populated. Still confirm timing, volumes, and decision maker before outreach.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside>
+    <section class="section">
+      <h2>Next Action</h2>
+      <p>{{ report.priority.recommended_next_action }}</p>
+      <p class="muted">{{ report.priority.opportunity_risk }}</p>
+    </section>
+
+    <section class="section">
+      <h2>Best Recommended Site</h2>
+      {% set best_site = report.top_site_matches[0] if report.top_site_matches else none %}
+      {% if best_site %}
+        <h3><a href="{{ url_for('site_detail', site_name=best_site.site_name) }}">{{ best_site.site_name }}</a></h3>
+        <p class="score">{{ best_site.compatibility_score }}/100 compatibility</p>
+        <p>{{ best_site.site_location }}</p>
+        <p>
+          <a class="button primary" href="{{ url_for('opportunity_workspace', company=report.company_profile.company, site=best_site.site_name) }}">Open Workspace</a>
+          <a class="button secondary" href="{{ url_for('company_site_comparison', company_name=report.company_profile.company) }}">Compare Sites</a>
+          <a class="button" href="{{ url_for('site_detail', site_name=best_site.site_name) }}">Review Site</a>
+        </p>
+        <ul class="clean">
+          {% for reason in best_site.matching_reasons[:4] %}
+            <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No recommended site is available.</p>
+      {% endif %}
+    </section>
+  </aside>
+</div>
+
+<section class="section">
+  <h2>Top Site Matches</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Site</th>
+        <th>Compatibility</th>
+        <th>Location</th>
+        <th>Access</th>
+          <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for match in report.top_site_matches %}
+        <tr>
+          <td><a href="{{ url_for('site_detail', site_name=match.site_name) }}"><strong>{{ match.site_name }}</strong></a></td>
+          <td class="score">{{ match.compatibility_score }}/100</td>
+          <td>{{ match.site_location }}</td>
+          <td>
+            Rail {{ match.site_profile.rail_served }},
+            Transload {{ match.site_profile.transload_available }},
+            Port {{ match.site_profile.port_access }}
+          </td>
+          <td class="action-cell">
+            <a class="button primary small" href="{{ url_for('opportunity_workspace', company=report.company_profile.company, site=match.site_name) }}">Workspace</a>
+            <a class="button small" href="{{ url_for('site_detail', site_name=match.site_name) }}">Site</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,46 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.egg-info/
+build/
+dist/
+.python-version
+venv/
+.venv/
+env/
+ENV/
+
+# macOS
+.DS_Store
+
+# Generated outputs
+exports/
+maps/
+/geographic_profiles.csv
+/ranked_opportunities.csv
+/top_*_opportunities.csv
+/all_companies.csv
+
+# Test and packaging
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE files
+.vscode/
+.idea/
+
+# Logs and local runtime files
+*.log
+*.tmp
+
+# Local scratch copies from manual cleanup or data repair
+*_backup.*
+*_fixed.*
+*_old.*
