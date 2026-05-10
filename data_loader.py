@@ -10,9 +10,10 @@ from typing import Dict, List, Tuple
 
 from config import (
     COMPANIES_FILE, SEGMENTS_FILE, SITES_FILE, RAIL_FILE,
-    CITY_COORDINATES
+    CITY_COORDINATES, DATA_DIR
 )
 from logger import get_logger
+from modules.data_quality import annotate_rail_quality, annotate_site_quality
 
 logger = get_logger(__name__)
 
@@ -71,23 +72,51 @@ def validate_csv_file(filename: Path, required_fields=None, numeric_fields=None,
 
     return issues
 
-def validate_data_files() -> List[str]:
+def normalize_yes_no(value: str) -> str:
+    """Normalize yes/no fields for display while preserving unknown text."""
+    normalized = str(value or '').strip()
+    if normalized.lower() in {'yes', 'true', '1'}:
+        return 'Yes'
+    if normalized.lower() in {'no', 'false', '0'}:
+        return 'No'
+    return normalized
+
+def resolve_data_files(data_dir=None) -> Dict[str, Path]:
+    """Return the active data file paths, preferring the current project dir."""
+    if data_dir is None:
+        cwd_data_dir = Path.cwd() / "data"
+        if cwd_data_dir.exists():
+            data_dir = cwd_data_dir
+        else:
+            data_dir = DATA_DIR
+    else:
+        data_dir = Path(data_dir)
+
+    return {
+        "segments": data_dir / "segments.csv",
+        "companies": data_dir / "companies.csv",
+        "sites": data_dir / "industrial_sites.csv",
+        "rail": data_dir / "rail_infrastructure.csv",
+    }
+
+def validate_data_files(data_dir=None) -> List[str]:
     """Validate all data CSV files prior to loading."""
+    files = resolve_data_files(data_dir)
     file_specs = {
-        SEGMENTS_FILE: {
+        files["segments"]: {
             "required_fields": ["segment", "stage", "rail_score", "reason", "omnitrax_angle", "commodity_type"],
             "numeric_fields": ["rail_score"]
         },
-        COMPANIES_FILE: {
+        files["companies"]: {
             "required_fields": ["company", "segment", "state", "city", "commodity_type", "rail_fit_score", "industrial_real_estate_score"],
             "numeric_fields": ["rail_fit_score", "industrial_real_estate_score"]
         },
-        SITES_FILE: {
+        files["sites"]: {
             "required_fields": ["site_name", "state", "city", "rail_served", "nearby_class1", "transload_available", "interstate_access", "port_access", "target_industries"],
             "numeric_fields": ["acres"],
             "allow_blank": ["acres"]
         },
-        RAIL_FILE: {
+        files["rail"]: {
             "required_fields": ["location", "type", "latitude", "longitude", "rail_connections", "capacity_score", "logistics_score"],
             "numeric_fields": ["latitude", "longitude", "rail_connections", "capacity_score", "logistics_score"]
         }
@@ -140,15 +169,15 @@ def normalize_company_record(company: Dict) -> Dict:
 
 def normalize_site_record(site: Dict) -> Dict:
     """Normalize site record fields"""
-    return {
+    normalized = {
         'site_name': site.get('site_name', ''),
         'state': site.get('state', ''),
         'city': site.get('city', ''),
-        'rail_served': site.get('rail_served', ''),
-        'nearby_class1': site.get('nearby_class1', ''),
-        'transload_available': site.get('transload_available', ''),
-        'interstate_access': site.get('interstate_access', ''),
-        'port_access': site.get('port_access', ''),
+        'rail_served': normalize_yes_no(site.get('rail_served', '')),
+        'nearby_class1': normalize_yes_no(site.get('nearby_class1', '')),
+        'transload_available': normalize_yes_no(site.get('transload_available', '')),
+        'interstate_access': normalize_yes_no(site.get('interstate_access', '')),
+        'port_access': normalize_yes_no(site.get('port_access', '')),
         'target_industries': site.get('target_industries', ''),
         'acres': site.get('acres', ''),
         'source_confidence': site.get('source_confidence', ''),
@@ -156,10 +185,11 @@ def normalize_site_record(site: Dict) -> Dict:
         'last_verified': site.get('last_verified', ''),
         'data_gap_notes': site.get('data_gap_notes', ''),
     }
+    return annotate_site_quality(normalized)
 
 def normalize_rail_infrastructure_record(rail: Dict) -> Dict:
     """Normalize rail infrastructure record fields"""
-    return {
+    normalized = {
         'location': rail.get('location', ''),
         'type': rail.get('type', ''),
         'latitude': float(rail.get('latitude', 0)),
@@ -167,14 +197,15 @@ def normalize_rail_infrastructure_record(rail: Dict) -> Dict:
         'rail_connections': int(rail.get('rail_connections', 0)),
         'capacity_score': int(rail.get('capacity_score', 0)),
         'logistics_score': int(rail.get('logistics_score', 0)),
-        'port_nearby': rail.get('port_nearby', ''),
-        'interstate_access': rail.get('interstate_access', ''),
-        'transload_hub': rail.get('transload_hub', ''),
+        'port_nearby': normalize_yes_no(rail.get('port_nearby', '')),
+        'interstate_access': normalize_yes_no(rail.get('interstate_access', '')),
+        'transload_hub': normalize_yes_no(rail.get('transload_hub', '')),
         'source_confidence': rail.get('source_confidence', ''),
         'source_url': rail.get('source_url', ''),
         'last_verified': rail.get('last_verified', ''),
         'data_gap_notes': rail.get('data_gap_notes', ''),
     }
+    return annotate_rail_quality(normalized)
 
 def enhance_company_geography(companies: List[Dict], rail_infrastructure: List[Dict]) -> List[Dict]:
     """Add geographic intelligence to company data"""
@@ -196,11 +227,12 @@ def enhance_company_geography(companies: List[Dict], rail_infrastructure: List[D
 
     return companies
 
-def load_data() -> Tuple[List[Dict], List[Dict], List[Dict], List[Dict]]:
+def load_data(data_dir=None) -> Tuple[List[Dict], List[Dict], List[Dict], List[Dict]]:
     """Load all data files"""
     logger.info("Loading all data files")
 
-    issues = validate_data_files()
+    files = resolve_data_files(data_dir)
+    issues = validate_data_files() if data_dir is None else validate_data_files(data_dir)
     if issues:
         logger.error("Data validation issues found")
         for issue in issues:
@@ -208,10 +240,10 @@ def load_data() -> Tuple[List[Dict], List[Dict], List[Dict], List[Dict]]:
         raise ValueError("Data validation failed. Please fix the reported CSV issues before running OmniMapping.")
 
     try:
-        segments = [normalize_segment_record(s) for s in load_csv(SEGMENTS_FILE)]
-        companies = [normalize_company_record(c) for c in load_csv(COMPANIES_FILE)]
-        sites = [normalize_site_record(s) for s in load_csv(SITES_FILE)]
-        rail_infrastructure = [normalize_rail_infrastructure_record(r) for r in load_csv(RAIL_FILE)]
+        segments = [normalize_segment_record(s) for s in load_csv(files["segments"])]
+        companies = [normalize_company_record(c) for c in load_csv(files["companies"])]
+        sites = [normalize_site_record(s) for s in load_csv(files["sites"])]
+        rail_infrastructure = [normalize_rail_infrastructure_record(r) for r in load_csv(files["rail"])]
 
         # Enhance companies with geographic intelligence
         companies = enhance_company_geography(companies, rail_infrastructure)

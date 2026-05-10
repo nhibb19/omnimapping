@@ -16,6 +16,8 @@ from dashboard import (
     build_company_scan_summary,
     build_opportunity_workspace,
     build_site_scan_summary,
+    build_supply_chain_filter_options,
+    build_supply_chain_scan_summary,
     create_app,
     filter_companies_for_dashboard,
     filter_site_directory,
@@ -29,6 +31,12 @@ from modules.review import (
     load_review_store,
     merge_review_records,
     save_review_store,
+)
+from modules.supply_chains import (
+    SUPPLY_CHAIN_DEFINITIONS,
+    build_supply_chain_catalog,
+    build_supply_chain_detail,
+    filter_supply_chains,
 )
 
 
@@ -393,6 +401,110 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
         self.assertIn('/downloads/company-site-comparison/Acme%20Chemicals.json?limit=5', body)
         self.assertIn('/downloads/company-site-comparison/Acme%20Chemicals.csv?limit=5', body)
+
+    def test_supply_chain_definitions_have_required_visual_flow_structure(self):
+        self.assertGreaterEqual(len(SUPPLY_CHAIN_DEFINITIONS), 10)
+        required_slugs = {
+            'pellets',
+            'steel',
+            'chemicals',
+            'agriculture',
+            'automotive',
+            'construction-materials',
+            'energy',
+            'forest-products',
+            'food-cold-storage',
+            'machinery',
+            'plastics-resins',
+            'warehousing-distribution',
+        }
+        self.assertTrue(required_slugs.issubset({chain['slug'] for chain in SUPPLY_CHAIN_DEFINITIONS}))
+
+        for chain in SUPPLY_CHAIN_DEFINITIONS:
+            self.assertTrue(chain['name'])
+            self.assertTrue(chain['summary'])
+            self.assertGreaterEqual(len(chain['steps']), 4)
+            for step in chain['steps']:
+                self.assertIn(step['role'], {
+                    'Upstream inputs',
+                    'Processing',
+                    'Storage / transload',
+                    'Downstream customers',
+                })
+                self.assertTrue(step['title'])
+                self.assertTrue(step['terms'])
+                self.assertTrue(step['opportunity'])
+
+    def test_supply_chain_catalog_matches_companies_and_supports_filters(self):
+        _, companies, _, _ = self.loaded_data
+        catalog = build_supply_chain_catalog(companies)
+        chemicals = next(chain for chain in catalog if chain['slug'] == 'chemicals')
+        warehousing = next(chain for chain in catalog if chain['slug'] == 'warehousing-distribution')
+
+        self.assertGreaterEqual(len(catalog), 10)
+        self.assertEqual(chemicals['count'], 1)
+        self.assertEqual(chemicals['top_companies'][0]['company'], 'Acme Chemicals')
+        self.assertEqual(chemicals['top_companies'][0]['opportunity_label'], 'Strong rail prospect')
+        self.assertEqual(warehousing['top_companies'][0]['company'], 'Front Range Logistics')
+
+        filtered = filter_supply_chains(catalog, group='Chemicals', query='resin')
+        self.assertEqual([chain['slug'] for chain in filtered], ['plastics-resins'])
+
+        summary = build_supply_chain_scan_summary([chemicals, warehousing])
+        self.assertEqual(summary['chain_count'], 2)
+        self.assertEqual(summary['company_matches'], 2)
+        self.assertEqual(summary['strong_prospects'], 1)
+
+        options = build_supply_chain_filter_options(catalog)
+        self.assertIn('Chemicals', options['groups'])
+
+    def test_supply_chain_detail_assigns_step_company_matches(self):
+        _, companies, _, _ = self.loaded_data
+        detail = build_supply_chain_detail('chemicals', companies)
+
+        self.assertEqual(detail['name'], 'Chemicals')
+        self.assertEqual(detail['companies'][0]['company'], 'Acme Chemicals')
+        self.assertEqual(len(detail['steps']), 4)
+        self.assertTrue(any(
+            company['company'] == 'Acme Chemicals'
+            for step in detail['steps']
+            for company in step['companies']
+        ))
+
+    def test_supply_chains_routes_render_catalog_and_detail_workflow_links(self):
+        catalog_response = self.client.get('/supply-chains')
+        detail_response = self.client.get('/supply-chains/chemicals')
+
+        self.assertEqual(catalog_response.status_code, 200)
+        catalog_body = catalog_response.get_data(as_text=True)
+        self.assertIn('Supply Chains', catalog_body)
+        self.assertIn('Pellets', catalog_body)
+        self.assertIn('Steel', catalog_body)
+        self.assertIn('Food / Cold Storage', catalog_body)
+        self.assertIn('/supply-chains/chemicals', catalog_body)
+        self.assertIn('Strong rail prospects', catalog_body)
+
+        self.assertEqual(detail_response.status_code, 200)
+        detail_body = detail_response.get_data(as_text=True)
+        self.assertIn('Visual Flow', detail_body)
+        self.assertIn('Upstream inputs', detail_body)
+        self.assertIn('Processing', detail_body)
+        self.assertIn('Storage / transload', detail_body)
+        self.assertIn('Downstream customers', detail_body)
+        self.assertIn('Rail-service possible', detail_body)
+        self.assertIn('Strong rail prospect', detail_body)
+        self.assertIn('Acme Chemicals', detail_body)
+        self.assertIn('/companies/Acme%20Chemicals', detail_body)
+        self.assertIn('/companies/Acme%20Chemicals/site-comparison', detail_body)
+        self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', detail_body)
+
+    def test_supply_chains_route_filters_group_and_search(self):
+        response = self.client.get('/supply-chains?group=Chemicals&q=resin')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Plastics / Resins', body)
+        self.assertNotIn('Steel</a>', body)
 
     def test_opportunity_workspace_page_shows_action_context(self):
         response = self.client.get('/workspace?company=Acme%20Chemicals&site=Houston%20Rail%20Park')

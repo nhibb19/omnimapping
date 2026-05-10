@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}{{ chain.name }} Supply Chain - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-kicker">{{ chain.group }} Supply Chain</div>
+    <h1>{{ chain.name }}</h1>
+    <p class="summary-note">{{ chain.summary }}</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('supply_chains') }}">Back to Supply Chains</a>
+    <a class="button" href="{{ url_for('companies', q=chain.name) }}">Find Companies</a>
+  </div>
+</div>
+
+<section class="scan-strip" aria-label="Supply chain detail summary">
+  <div class="scan-item"><span class="muted">Matched companies</span><strong>{{ chain.count }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Strong rail prospects</span><strong>{{ chain.strong_count }}</strong></div>
+  <div class="scan-item review"><span class="muted">Rail-service possible</span><strong>{{ chain.possible_count }}</strong></div>
+  <div class="scan-item info"><span class="muted">Average priority</span><strong>{{ chain.average_priority }}</strong></div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div>
+      <h2>Visual Flow</h2>
+      <p class="summary-note">Click company names to open existing company detail, site comparison, or opportunity workspace flows.</p>
+    </div>
+  </div>
+  <div class="chain-flow" aria-label="{{ chain.name }} visual supply chain flow">
+    {% for step in chain.steps %}
+      <article class="flow-step">
+        <span class="flow-step-number">{{ step.index }}</span>
+        <div class="page-kicker">{{ step.role }}</div>
+        <h2>{{ step.title }}</h2>
+        <div class="opportunity-note">{{ step.opportunity }}</div>
+        <div class="pill-row status-line">
+          <span class="pill neutral">{{ step.count }} companies</span>
+          <span class="pill positive">{{ step.strong_count }} strong</span>
+          <span class="pill review">{{ step.possible_count }} possible</span>
+        </div>
+        <div class="company-opportunity-list status-line">
+          {% for company in step.companies %}
+            <div class="company-opportunity">
+              <div class="company-opportunity-head">
+                <div>
+                  <a href="{{ url_for('company_detail', company_name=company.company) }}"><strong>{{ company.company }}</strong></a>
+                  <span class="subtle">{{ company.segment }} | {{ company.commodity }} | {{ company.location }}</span>
+                </div>
+                <span class="score-chip {{ score_tone(company.priority_score) }}">
+                  <strong>{{ company.priority_score }}</strong>
+                  <span>Priority</span>
+                </span>
+              </div>
+              <div class="pill-row status-line">
+                <span class="pill {{ company.opportunity_tone }}">{{ company.opportunity_label }}</span>
+                <span class="pill neutral">Rail fit {{ company.rail_fit_score }}/5</span>
+                {% if company.best_site_name %}
+                  <a class="pill review" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">{{ company.best_site_match_score }}/100 site fit</a>
+                {% else %}
+                  <span class="pill review">Site TBD</span>
+                {% endif %}
+              </div>
+              <div class="actions status-line">
+                <a class="button primary small" href="{{ url_for('company_detail', company_name=company.company) }}">Review Company</a>
+                <a class="button secondary small" href="{{ url_for('company_site_comparison', company_name=company.company) }}">Compare Sites</a>
+                {% if company.best_site_name %}
+                  <a class="button small" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">Open Workspace</a>
+                {% endif %}
+              </div>
+            </div>
+          {% else %}
+            <div class="gap-note neutral">No matched OmniMapping companies for this step yet. Use this as a research gap for prospect expansion.</div>
+          {% endfor %}
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="section">
+  <h2>Matched OmniMapping Companies</h2>
+  {% if chain.companies %}
+    <table class="responsive-table">
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Segment</th>
+          <th>Commodity</th>
+          <th>Rail Opportunity</th>
+          <th>Priority</th>
+          <th>Best Site</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for company in chain.companies %}
+          <tr>
+            <td class="primary-cell"><span class="mobile-label">Company</span><a href="{{ url_for('company_detail', company_name=company.company) }}"><strong>{{ company.company }}</strong></a><span class="subtle">{{ company.location }}</span></td>
+            <td><span class="mobile-label">Segment</span>{{ company.segment }}</td>
+            <td><span class="mobile-label">Commodity</span>{{ company.commodity }}</td>
+            <td><span class="mobile-label">Rail Opportunity</span><span class="pill {{ company.opportunity_tone }}">{{ company.opportunity_label }}</span></td>
+            <td><span class="mobile-label">Priority</span><span class="score-chip {{ score_tone(company.priority_score) }}"><strong>{{ company.priority_score }}</strong><span>{{ priority_label(company.priority_score) }}</span></span></td>
+            <td>
+              <span class="mobile-label">Best Site</span>
+              {% if company.best_site_name %}
+                <a href="{{ url_for('site_detail', site_name=company.best_site_name) }}">{{ company.best_site_name }}</a>
+                <span class="subtle">{{ company.best_site_match_score }}/100 fit</span>
+              {% else %}
+                <span class="pill review">Site TBD</span>
+              {% endif %}
+            </td>
+            <td class="action-cell">
+              <span class="mobile-label">Actions</span>
+              <div class="action-stack">
+                <a class="button primary small" href="{{ url_for('company_detail', company_name=company.company) }}">Review Company</a>
+                <a class="button secondary small" href="{{ url_for('company_site_comparison', company_name=company.company) }}">Compare Sites</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">No companies match this supply chain yet.</div>
+  {% endif %}
+</section>
+{% endblock %}

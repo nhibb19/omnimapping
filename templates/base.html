@@ -333,6 +333,136 @@
       border-bottom: 1px solid var(--border);
       padding-bottom: 6px;
     }
+    .chain-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .chain-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 275px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .chain-card:hover { border-color: var(--border-strong); }
+    .chain-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .chain-card h2 { font-size: 18px; margin-bottom: 4px; }
+    .mini-flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      align-items: stretch;
+    }
+    .mini-step {
+      min-height: 48px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #fbfcfd;
+      padding: 7px;
+      color: var(--muted-strong);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chain-company-list {
+      display: grid;
+      gap: 6px;
+      margin-top: auto;
+    }
+    .chain-company {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      border-top: 1px solid var(--border);
+      padding-top: 7px;
+      min-width: 0;
+    }
+    .chain-company a { font-weight: 800; }
+    .chain-flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(230px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .flow-step {
+      position: relative;
+      min-width: 230px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .flow-step:not(:last-child)::after {
+      content: ">";
+      position: absolute;
+      top: 42px;
+      right: -11px;
+      width: 20px;
+      height: 20px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #ffffff;
+      color: var(--accent-strong);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      z-index: 1;
+    }
+    .flow-step-number {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: var(--accent-strong);
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+    .flow-step h2 { font-size: 17px; margin-bottom: 4px; }
+    .opportunity-note {
+      border-left: 4px solid var(--accent);
+      background: var(--blue-bg);
+      padding: 9px 10px;
+      color: var(--muted-strong);
+      margin: 10px 0;
+    }
+    .company-opportunity-list {
+      display: grid;
+      gap: 8px;
+    }
+    .company-opportunity {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fbfcfd;
+      padding: 10px;
+    }
+    .company-opportunity-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+    }
     .summary-note {
       margin: 0;
       color: var(--muted);
@@ -357,8 +487,12 @@
       .page-head, .topbar { flex-direction: column; align-items: stretch; }
       .section-head { flex-direction: column; }
       .actions { justify-content: flex-start; }
-      form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid { grid-template-columns: 1fr; }
+      form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid, .chain-grid { grid-template-columns: 1fr; }
       form.grid { gap: 12px; }
+      .chain-flow { grid-template-columns: 1fr; overflow: visible; }
+      .flow-step { min-width: 0; }
+      .flow-step:not(:last-child)::after { display: none; }
+      .mini-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .review-form .button { width: 100%; }
       table.responsive-table, .responsive-table thead, .responsive-table tbody, .responsive-table th, .responsive-table td, .responsive-table tr {
         display: block;
@@ -403,6 +537,7 @@
       <nav>
         <a href="{{ url_for('companies') }}">Ranked Companies</a>
         <a href="{{ url_for('sites') }}">Industrial Sites</a>
+        <a href="{{ url_for('supply_chains') }}">Supply Chains</a>
         <a href="{{ url_for('health') }}">Health</a>
       </nav>
     </div>

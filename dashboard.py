@@ -43,6 +43,11 @@ from modules.review import (
     review_status_tone,
     save_review_store,
 )
+from modules.supply_chains import (
+    build_supply_chain_catalog,
+    build_supply_chain_detail,
+    filter_supply_chains,
+)
 from modules.ui import (
     format_company_context,
     format_transload_site_angle,
@@ -234,6 +239,23 @@ def build_site_scan_summary(sites):
         'blocked': len(blocked_sites),
         'rail_transload': len(rail_transload_sites),
         'high_confidence': len(high_confidence_sites),
+    }
+
+
+def build_supply_chain_scan_summary(chains):
+    """Build overview counts for the supply-chain dashboard."""
+    return {
+        'chain_count': len(chains),
+        'company_matches': sum(chain.get('count', 0) for chain in chains),
+        'strong_prospects': sum(chain.get('strong_count', 0) for chain in chains),
+        'rail_possible': sum(chain.get('possible_count', 0) for chain in chains),
+    }
+
+
+def build_supply_chain_filter_options(chains):
+    """Build select-list values from configured supply-chain groups."""
+    return {
+        'groups': unique_sorted(chain.get('group') for chain in chains),
     }
 
 
@@ -653,6 +675,39 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
         )
         return render_template('site_detail.html', report=report)
 
+    @app.route('/supply-chains')
+    def supply_chains():
+        _, companies, _, _ = get_data()
+        all_chains = build_supply_chain_catalog(companies)
+        filters = {
+            'group': str(request.args.get('group', '')).strip(),
+            'query': str(request.args.get('q', '')).strip(),
+        }
+        visible_chains = filter_supply_chains(
+            all_chains,
+            group=filters['group'] or None,
+            query=filters['query'] or None,
+        )
+
+        return render_template(
+            'supply_chains.html',
+            chains=visible_chains,
+            total_count=len(all_chains),
+            filtered_count=len(visible_chains),
+            filters=filters,
+            filter_options=build_supply_chain_filter_options(all_chains),
+            scan_summary=build_supply_chain_scan_summary(visible_chains),
+        )
+
+    @app.route('/supply-chains/<slug>')
+    def supply_chain_detail(slug):
+        _, companies, _, _ = get_data()
+        chain = build_supply_chain_detail(slug, companies)
+        if not chain:
+            abort(404)
+
+        return render_template('supply_chain_detail.html', chain=chain)
+
     @app.route('/sites/<path:site_name>/review', methods=['POST'])
     def update_site_review(site_name):
         _, _, all_sites, _ = get_data()
@@ -828,6 +883,8 @@ def run_smoke_test():
         ('/companies', 200),
         ('/companies?state=TX&min_score=1', 200),
         ('/sites', 200),
+        ('/supply-chains', 200),
+        ('/supply-chains/steel', 200),
         ('/workspace?company=Nucor&site=Savannah%20Gateway%20Industrial%20Hub', 200),
         ('/companies/Nucor/site-comparison', 200),
     ]

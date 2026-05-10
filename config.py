@@ -64,6 +64,7 @@ CITY_COORDINATES = {
     'Wichita': (37.6872, -97.3301),
     'Louisville': (38.2527, -85.7585),
     'Dallas': (32.7767, -96.7970),
+    'Denver': (39.7392, -104.9903),
 }
 
 # Scoring weights and constants
