@@ -53,7 +53,7 @@ pip install -r requirements.txt
 Start the interactive OmniMapping menu:
 
 ```bash
-cd "/Users/nickhibbard/Documents/New project/omnimapping"
+cd "/Users/nickhibbard/Documents/GitHub/omnimapping"
 python3 main.py
 ```
 
@@ -62,7 +62,7 @@ python3 main.py
 Start the Flask dashboard for economic development review workflows:
 
 ```bash
-cd "/Users/nickhibbard/Documents/New project/omnimapping"
+cd "/Users/nickhibbard/Documents/GitHub/omnimapping"
 python3 dashboard.py
 ```
 
@@ -170,7 +170,7 @@ python3 main.py --list-sites
 ## Running Tests
 
 ```bash
-cd "/Users/nickhibbard/Documents/New project/omnimapping"
+cd "/Users/nickhibbard/Documents/GitHub/omnimapping"
 python3 -m unittest discover -s tests
 ```
 
