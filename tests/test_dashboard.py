@@ -24,6 +24,12 @@ from dashboard import (
     unique_sorted,
 )
 from modules.export import build_site_directory
+from modules.review import (
+    build_review_update,
+    load_review_store,
+    merge_review_records,
+    save_review_store,
+)
 
 
 class TestOmniMappingDashboard(unittest.TestCase):
@@ -44,9 +50,11 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.app = create_app(
             data_loader=lambda: self.loaded_data,
             export_dir=os.path.join(self.tempdir.name, 'exports'),
+            review_store_path=os.path.join(self.tempdir.name, 'data', 'review_status.json'),
         )
         self.app.config['TESTING'] = True
         self.client = self.app.test_client()
+        self.review_store_path = self.app.config['OMNIMAPPING_REVIEW_STORE']
 
     def write_csv(self, filepath, rows):
         import csv
@@ -220,6 +228,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         detail_body = detail_response.get_data(as_text=True)
         self.assertIn('Site Details', detail_body)
         self.assertIn('Top Compatible Companies', detail_body)
+        self.assertIn('Review Status', detail_body)
+        self.assertIn('Save Review', detail_body)
+        self.assertIn('Confirmed', detail_body)
         self.assertIn('Data Confidence', detail_body)
         self.assertIn('Source confidence', detail_body)
         self.assertIn('Last verified', detail_body)
@@ -231,13 +242,14 @@ class TestOmniMappingDashboard(unittest.TestCase):
 
     def test_site_filters_work_for_state_port_transload_and_confidence(self):
         _, _, sites, _ = self.loaded_data
-        directory = build_site_directory(sites)
+        directory = merge_review_records(build_site_directory(sites), {})
 
         filtered = filter_site_directory(directory, {
             'state': 'TX',
             'port_access': 'Yes',
             'transload_available': 'Yes',
             'source_confidence': 'Unspecified',
+            'review_status': '',
         })
 
         self.assertEqual([site['site_name'] for site in filtered], ['Houston Rail Park'])
@@ -249,11 +261,93 @@ class TestOmniMappingDashboard(unittest.TestCase):
             'transload_available': '',
             'source_confidence': '',
             'needs_confirmation': 'yes',
+            'review_status': '',
         })
         self.assertEqual([site['site_name'] for site in confirmation_filtered], ['Denver Industrial Yard'])
 
         summary = build_site_scan_summary(directory)
         self.assertEqual(summary['needs_confirmation'], 1)
+        self.assertEqual(summary['review_queue'], 1)
+
+    def test_default_review_status_derives_from_confirmation_flag(self):
+        _, _, sites, _ = self.loaded_data
+        directory = merge_review_records(build_site_directory(sites), {})
+        statuses = {site['site_name']: site['review_status'] for site in directory}
+
+        self.assertEqual(statuses['Houston Rail Park'], 'confirmed')
+        self.assertEqual(statuses['Denver Industrial Yard'], 'needs_review')
+
+    def test_review_store_load_save_and_malformed_fallback(self):
+        record = build_review_update(
+            {},
+            'in_review',
+            notes='Confirm acreage with county source.',
+            reviewed_by='Alex',
+            source_update_url='https://example.com/source',
+            reviewed_at='2026-05-09T20:00:00',
+        )
+        saved = save_review_store(self.review_store_path, {'Denver Industrial Yard': record})
+        loaded = load_review_store(self.review_store_path)
+
+        self.assertEqual(saved, loaded)
+        self.assertEqual(loaded['Denver Industrial Yard']['review_status'], 'in_review')
+        self.assertEqual(loaded['Denver Industrial Yard']['reviewed_by'], 'Alex')
+
+        with open(self.review_store_path, 'w') as review_file:
+            review_file.write('{not-json')
+
+        self.assertEqual(load_review_store(self.review_store_path), {})
+
+    def test_sites_page_filters_by_review_status(self):
+        save_review_store(self.review_store_path, {
+            'Denver Industrial Yard': build_review_update(
+                {},
+                'blocked',
+                notes='Waiting on parcel control source.',
+                reviewed_by='Maya',
+                reviewed_at='2026-05-09T20:05:00',
+            ),
+        })
+
+        response = self.client.get('/sites?review_status=blocked')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Denver Industrial Yard', body)
+        self.assertIn('Blocked', body)
+        self.assertNotIn('Houston Rail Park', body)
+
+    def test_site_review_update_route_persists_and_redirects(self):
+        response = self.client.post('/sites/Denver%20Industrial%20Yard/review', data={
+            'review_status': 'confirmed',
+            'review_notes': 'Acreage confirmed from public listing.',
+            'reviewed_by': 'Jordan',
+            'source_update_url': 'https://example.com/denver-yard',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/sites/Denver%20Industrial%20Yard', response.headers['Location'])
+
+        loaded = load_review_store(self.review_store_path)
+        self.assertEqual(loaded['Denver Industrial Yard']['review_status'], 'confirmed')
+        self.assertEqual(loaded['Denver Industrial Yard']['reviewed_by'], 'Jordan')
+        self.assertTrue(loaded['Denver Industrial Yard']['reviewed_at'])
+
+        detail_response = self.client.get('/sites/Denver%20Industrial%20Yard')
+        detail_body = detail_response.get_data(as_text=True)
+        self.assertIn('Acreage confirmed from public listing.', detail_body)
+        self.assertIn('Jordan', detail_body)
+
+    def test_site_review_update_validates_site_and_status(self):
+        missing_response = self.client.post('/sites/Not%20A%20Site/review', data={
+            'review_status': 'confirmed',
+        })
+        bad_status_response = self.client.post('/sites/Denver%20Industrial%20Yard/review', data={
+            'review_status': 'done-ish',
+        })
+
+        self.assertEqual(missing_response.status_code, 404)
+        self.assertEqual(bad_status_response.status_code, 400)
 
     def test_opportunity_workspace_payload_uses_selected_pair(self):
         segments, companies, sites, _ = self.loaded_data

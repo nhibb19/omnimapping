@@ -6,11 +6,14 @@
     <div class="page-kicker">Site Profile</div>
     <h1>{{ report.site_profile.site_name }}</h1>
     <p class="summary-note">{{ report.site_profile.location }} | {{ report.site_profile.acres or 'Unknown' }} acres</p>
-    {% if report.site_profile.needs_confirmation %}
-      <div class="status-line"><span class="pill review">Needs confirmation</span></div>
-    {% else %}
-      <div class="status-line"><span class="pill positive">Current record</span></div>
-    {% endif %}
+    <div class="status-line">
+      <span class="pill {{ report.site_profile.review_status_tone }}">{{ report.site_profile.review_status_label }}</span>
+      {% if report.site_profile.needs_confirmation %}
+        <span class="pill review">Needs confirmation</span>
+      {% else %}
+        <span class="pill neutral">No data flags</span>
+      {% endif %}
+    </div>
   </div>
   <div class="actions">
     <a class="button" href="{{ url_for('sites') }}">Back to sites</a>
@@ -22,7 +25,59 @@
   <div class="scan-item"><span class="muted">Acres</span><strong>{{ report.site_profile.acres or 'Confirm' }}</strong></div>
   <div class="scan-item {{ yes_no_tone(report.site_profile.rail_served) }}"><span class="muted">Rail</span><strong>{{ report.site_profile.rail_served or 'Confirm' }}</strong></div>
   <div class="scan-item {{ confidence_tone(report.site_profile.source_confidence) }}"><span class="muted">Confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong></div>
+  <div class="scan-item {{ report.site_profile.review_status_tone }}"><span class="muted">Review</span><strong>{{ report.site_profile.review_status_label }}</strong></div>
   <div class="scan-item info"><span class="muted">Matched companies</span><strong>{{ report.top_matched_companies|length }}</strong></div>
+</section>
+
+<section class="section review-panel">
+  <div class="section-head">
+    <div>
+      <h2>Review Status</h2>
+      <p class="summary-note">Use this local workflow to capture validation status before outreach.</p>
+    </div>
+    <span class="pill {{ report.site_profile.review_status_tone }}">{{ report.site_profile.review_status_label }}</span>
+  </div>
+  <div class="review-grid">
+    <div class="review-summary">
+      <div class="metrics">
+        <div class="metric"><span class="muted">Reviewer</span><strong>{{ report.site_profile.reviewed_by or 'Not assigned' }}</strong></div>
+        <div class="metric"><span class="muted">Reviewed at</span><strong>{{ report.site_profile.reviewed_at or 'Not reviewed' }}</strong></div>
+        <div class="metric"><span class="muted">Outreach readiness</span><strong>{{ 'Ready' if report.site_profile.ready_for_outreach else 'Hold' }}</strong></div>
+      </div>
+      <p><strong>Review notes:</strong> {{ report.site_profile.review_notes or 'No review notes captured yet.' }}</p>
+      {% if report.site_profile.source_update_url %}
+        <p><strong>Source update:</strong> <a href="{{ report.site_profile.source_update_url }}">{{ report.site_profile.source_update_url }}</a></p>
+      {% endif %}
+      {% if report.site_profile.data_quality_flags %}
+        <div class="gap-note"><strong>Data quality flags:</strong> {{ report.site_profile.data_quality_flags | join(', ') }}.</div>
+      {% else %}
+        <div class="gap-note neutral"><strong>Data quality flags:</strong> No specific flags generated from the current site data.</div>
+      {% endif %}
+    </div>
+    <form class="review-form" method="post" action="{{ url_for('update_site_review', site_name=report.site_profile.site_name) }}">
+      <div>
+        <label for="review_status">Review status</label>
+        <select id="review_status" name="review_status" required>
+          {% for option in review_status_options %}
+            <option value="{{ option.value }}" {% if report.site_profile.review_status == option.value %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="reviewed_by">Reviewed by</label>
+        <input id="reviewed_by" name="reviewed_by" type="text" autocomplete="name" value="{{ report.site_profile.reviewed_by }}" placeholder="Name or team">
+      </div>
+      <div>
+        <label for="source_update_url">Source update URL</label>
+        <input id="source_update_url" name="source_update_url" type="url" value="{{ report.site_profile.source_update_url }}" placeholder="https://...">
+      </div>
+      <div>
+        <label for="review_notes">Review notes</label>
+        <textarea id="review_notes" name="review_notes" rows="4" placeholder="What was confirmed, what changed, and what still needs follow-up">{{ report.site_profile.review_notes }}</textarea>
+      </div>
+      <button class="button primary" type="submit">Save Review</button>
+    </form>
+  </div>
 </section>
 
 <section class="section">
@@ -42,7 +97,7 @@
   <div class="metrics">
     <div class="metric"><span class="muted">Source confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong><span class="pill {{ confidence_tone(report.site_profile.source_confidence) }}">Confidence</span></div>
     <div class="metric"><span class="muted">Last verified</span><strong>{{ report.site_profile.last_verified or 'Unknown' }}</strong></div>
-    <div class="metric"><span class="muted">Status</span><strong>{{ 'Needs confirmation' if report.site_profile.needs_confirmation else 'Current' }}</strong></div>
+    <div class="metric"><span class="muted">Raw confirmation</span><strong>{{ 'Needs confirmation' if report.site_profile.needs_confirmation else 'Current' }}</strong></div>
   </div>
   {% if report.site_profile.source_url %}
     <p><strong>Source:</strong> <a href="{{ report.site_profile.source_url }}">{{ report.site_profile.source_url }}</a></p>

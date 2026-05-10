@@ -128,7 +128,7 @@
     }
     form.grid {
       display: grid;
-      grid-template-columns: minmax(220px, 1.6fr) repeat(5, minmax(120px, 1fr)) auto;
+      grid-template-columns: minmax(220px, 1.4fr) repeat(6, minmax(120px, 1fr)) auto;
       gap: 10px;
       align-items: end;
     }
@@ -146,7 +146,7 @@
       margin-bottom: 5px;
       text-transform: uppercase;
     }
-    select, input {
+    select, input, textarea {
       width: 100%;
       min-height: 38px;
       border: 1px solid var(--border);
@@ -156,6 +156,7 @@
       color: var(--text);
       font: inherit;
     }
+    textarea { resize: vertical; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -244,10 +245,33 @@
       padding: 16px;
       margin-bottom: 16px;
       box-shadow: var(--shadow);
+      overflow-wrap: anywhere;
     }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .review-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .review-form {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-soft);
+    }
+    .review-form .button { justify-self: start; }
     .scan-strip {
       display: grid;
-      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 10px;
       margin-bottom: 16px;
     }
@@ -275,6 +299,11 @@
       margin: 10px 0;
       color: #5f3d00;
     }
+    .gap-note.neutral {
+      border-left-color: var(--border-strong);
+      background: var(--panel-soft);
+      color: var(--muted-strong);
+    }
     .action-cell {
       min-width: 142px;
     }
@@ -289,6 +318,7 @@
       border-radius: 8px;
       padding: 12px;
       background: #fbfcfd;
+      min-width: 0;
     }
     .metric strong { display: block; font-size: 22px; }
     .breakdown {
@@ -325,9 +355,11 @@
     @media (max-width: 880px) {
       header { position: static; }
       .page-head, .topbar { flex-direction: column; align-items: stretch; }
+      .section-head { flex-direction: column; }
       .actions { justify-content: flex-start; }
-      form.grid, .layout, .metrics, .breakdown, .scan-strip { grid-template-columns: 1fr; }
+      form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid { grid-template-columns: 1fr; }
       form.grid { gap: 12px; }
+      .review-form .button { width: 100%; }
       table.responsive-table, .responsive-table thead, .responsive-table tbody, .responsive-table th, .responsive-table td, .responsive-table tr {
         display: block;
       }

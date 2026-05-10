@@ -33,6 +33,16 @@ from modules.export import (
 )
 from modules.scoring import calculate_site_compatibility_score
 from modules.search import find_best_sites_for_company, get_site_recommendation_explanation
+from modules.review import (
+    REVIEW_STATUS_LABELS,
+    REVIEW_STATUSES,
+    build_review_update,
+    load_review_store,
+    merge_review_records,
+    merge_review_record,
+    review_status_tone,
+    save_review_store,
+)
 from modules.ui import (
     format_company_context,
     format_transload_site_angle,
@@ -97,6 +107,10 @@ def build_site_filter_options(sites):
         'port_access': unique_sorted(site.get('port_access') for site in sites),
         'transload_available': unique_sorted(site.get('transload_available') for site in sites),
         'source_confidences': unique_sorted(site.get('source_confidence') for site in sites),
+        'review_statuses': [
+            {'value': status, 'label': REVIEW_STATUS_LABELS[status]}
+            for status in REVIEW_STATUSES
+        ],
     }
 
 
@@ -109,6 +123,7 @@ def get_site_filter_args(args):
         'transload_available': str(args.get('transload_available', '')).strip(),
         'source_confidence': str(args.get('source_confidence', '')).strip(),
         'needs_confirmation': str(args.get('needs_confirmation', '')).strip(),
+        'review_status': str(args.get('review_status', '')).strip(),
     }
 
 
@@ -133,6 +148,8 @@ def filter_site_directory(site_rows, filters):
     if filters.get('needs_confirmation'):
         wants_confirmation = filters['needs_confirmation'] == 'yes'
         filtered = [site for site in filtered if bool(site.get('needs_confirmation')) == wants_confirmation]
+    if filters.get('review_status'):
+        filtered = [site for site in filtered if site.get('review_status') == filters['review_status']]
     return filtered
 
 
@@ -195,6 +212,12 @@ def build_company_scan_summary(companies):
 def build_site_scan_summary(sites):
     """Build compact counts that help economic developers scan the site list."""
     confirmation_sites = [site for site in sites if site.get('needs_confirmation')]
+    confirmed_sites = [site for site in sites if site.get('review_status') == 'confirmed']
+    review_queue_sites = [
+        site for site in sites
+        if site.get('review_status') in {'needs_review', 'in_review'}
+    ]
+    blocked_sites = [site for site in sites if site.get('review_status') == 'blocked']
     rail_transload_sites = [
         site for site in sites
         if str(site.get('rail_served', '')).lower() == 'yes'
@@ -205,8 +228,10 @@ def build_site_scan_summary(sites):
         if str(site.get('source_confidence', '')).lower() == 'high'
     ]
     return {
-        'ready_sites': max(0, len(sites) - len(confirmation_sites)),
+        'ready_sites': len(confirmed_sites) if any('review_status' in site for site in sites) else max(0, len(sites) - len(confirmation_sites)),
         'needs_confirmation': len(confirmation_sites),
+        'review_queue': len(review_queue_sites),
+        'blocked': len(blocked_sites),
         'rail_transload': len(rail_transload_sites),
         'high_confidence': len(high_confidence_sites),
     }
@@ -264,6 +289,11 @@ def confidence_tone(value):
     if normalized in {'medium', 'unspecified', ''}:
         return 'review'
     return 'neutral'
+
+
+def status_label(status):
+    """Return display text for a local site review status."""
+    return REVIEW_STATUS_LABELS.get(status, REVIEW_STATUS_LABELS['needs_review'])
 
 
 def find_segment_for_company(segments, company):
@@ -513,11 +543,12 @@ def write_workspace_brief_txt(company, site, segments, output_dir="exports"):
     return filepath
 
 
-def create_app(data_loader=load_data, export_dir="exports"):
+def create_app(data_loader=load_data, export_dir="exports", review_store_path=None):
     """Create the dashboard app with injectable data loading for tests."""
     app = Flask(__name__)
     app.config['OMNIMAPPING_DATA_LOADER'] = data_loader
     app.config['OMNIMAPPING_EXPORT_DIR'] = export_dir
+    app.config['OMNIMAPPING_REVIEW_STORE'] = review_store_path or os.path.join('data', 'review_status.json')
 
     def get_data():
         if 'OMNIMAPPING_DATA' not in app.config:
@@ -536,6 +567,12 @@ def create_app(data_loader=load_data, export_dir="exports"):
             'match_label': match_label,
             'yes_no_tone': yes_no_tone,
             'confidence_tone': confidence_tone,
+            'review_status_tone': review_status_tone,
+            'status_label': status_label,
+            'review_status_options': [
+                {'value': status, 'label': REVIEW_STATUS_LABELS[status]}
+                for status in REVIEW_STATUSES
+            ],
         }
 
     @app.route('/')
@@ -588,6 +625,7 @@ def create_app(data_loader=load_data, export_dir="exports"):
         _, companies, all_sites, _ = get_data()
         filters = get_site_filter_args(request.args)
         site_rows = build_site_directory(all_sites)
+        site_rows = merge_review_records(site_rows, load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']))
         site_rows = filter_site_directory(site_rows, filters)
 
         return render_template(
@@ -609,7 +647,34 @@ def create_app(data_loader=load_data, export_dir="exports"):
             abort(404)
 
         report = build_site_report(site, companies, site_name, all_matches=matches, top_limit=15)
+        report['site_profile'] = merge_review_record(
+            report['site_profile'],
+            load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']),
+        )
         return render_template('site_detail.html', report=report)
+
+    @app.route('/sites/<path:site_name>/review', methods=['POST'])
+    def update_site_review(site_name):
+        _, _, all_sites, _ = get_data()
+        site, _ = find_site_for_report(all_sites, site_name)
+        if not site:
+            abort(404)
+
+        status = request.form.get('review_status', '')
+        try:
+            review_store = load_review_store(app.config['OMNIMAPPING_REVIEW_STORE'])
+            review_store[site.get('site_name', '')] = build_review_update(
+                review_store.get(site.get('site_name', ''), {}),
+                status,
+                notes=request.form.get('review_notes', ''),
+                reviewed_by=request.form.get('reviewed_by', ''),
+                source_update_url=request.form.get('source_update_url', ''),
+            )
+            save_review_store(app.config['OMNIMAPPING_REVIEW_STORE'], review_store)
+        except ValueError:
+            abort(400)
+
+        return redirect(url_for('site_detail', site_name=site.get('site_name', '')))
 
     @app.route('/workspace')
     def opportunity_workspace():

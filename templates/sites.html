@@ -5,7 +5,7 @@
   <div>
     <div class="page-kicker">Site Readiness</div>
     <h1>Industrial Sites</h1>
-    <p class="summary-note">{{ filtered_count }} of {{ total_count }} sites shown and matched against {{ company_count }} companies. Use confidence and confirmation status to decide which records are ready for outreach.</p>
+    <p class="summary-note">{{ filtered_count }} of {{ total_count }} sites shown and matched against {{ company_count }} companies. Use review status, confidence, and confirmation flags to decide which records are ready for outreach.</p>
   </div>
   <div class="actions">
     <a class="button" href="{{ url_for('companies') }}">View Companies</a>
@@ -62,6 +62,15 @@
         <option value="no" {% if filters.needs_confirmation == 'no' %}selected{% endif %}>Current only</option>
       </select>
     </div>
+    <div>
+      <label for="review_status">Review status</label>
+      <select id="review_status" name="review_status">
+        <option value="">Any</option>
+        {% for option in filter_options.review_statuses %}
+          <option value="{{ option.value }}" {% if filters.review_status == option.value %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="filter-actions">
       <button class="button primary" type="submit">Apply Filters</button>
       <a class="button" href="{{ url_for('sites') }}">Reset</a>
@@ -70,10 +79,10 @@
 </section>
 
 <section class="scan-strip" aria-label="Site scan summary">
-  <div class="scan-item positive"><span class="muted">Ready sites</span><strong>{{ scan_summary.ready_sites }}</strong></div>
-  <div class="scan-item review"><span class="muted">Need confirmation</span><strong>{{ scan_summary.needs_confirmation }}</strong></div>
-  <div class="scan-item info"><span class="muted">Rail + transload</span><strong>{{ scan_summary.rail_transload }}</strong></div>
-  <div class="scan-item positive"><span class="muted">High confidence</span><strong>{{ scan_summary.high_confidence }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_sites }}</strong></div>
+  <div class="scan-item review"><span class="muted">Review queue</span><strong>{{ scan_summary.review_queue }}</strong></div>
+  <div class="scan-item warning"><span class="muted">Blocked</span><strong>{{ scan_summary.blocked }}</strong></div>
+  <div class="scan-item info"><span class="muted">Need confirmation</span><strong>{{ scan_summary.needs_confirmation }}</strong></div>
 </section>
 
 {% if sites %}
@@ -87,7 +96,8 @@
         <th>Transload</th>
         <th>Port</th>
         <th>Confidence</th>
-        <th>Status</th>
+        <th>Review</th>
+        <th>Data Flags</th>
         <th>Target Industries</th>
         <th>Actions</th>
       </tr>
@@ -107,14 +117,25 @@
           <td><span class="mobile-label">Port</span><span class="pill {{ yes_no_tone(site.port_access) }}">Port {{ site.port_access or 'Confirm' }}</span></td>
           <td><span class="mobile-label">Confidence</span><span class="pill {{ confidence_tone(site.source_confidence) }}">{{ site.source_confidence or 'Unspecified' }}</span></td>
           <td>
-            <span class="mobile-label">Status</span>
+            <span class="mobile-label">Review</span>
+            <span class="pill {{ site.review_status_tone }}">{{ site.review_status_label }}</span>
+            {% if site.reviewed_by or site.reviewed_at %}
+              <span class="subtle">{{ site.reviewed_by or 'Reviewed' }}{% if site.reviewed_at %} | {{ site.reviewed_at }}{% endif %}</span>
+            {% elif site.ready_for_outreach %}
+              <span class="subtle">Ready for outreach</span>
+            {% else %}
+              <span class="subtle">Awaiting validation</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="mobile-label">Data Flags</span>
             {% if site.needs_confirmation %}
               <span class="pill review">Needs confirmation</span>
               {% if site.data_quality_flags %}
                 <span class="subtle">{{ site.data_quality_flags | join(', ') }}</span>
               {% endif %}
             {% else %}
-              <span class="pill positive">Current</span>
+              <span class="pill neutral">No data flags</span>
             {% endif %}
           </td>
           <td class="wide-cell"><span class="mobile-label">Target Industries</span>{{ site.target_industries }}</td>
