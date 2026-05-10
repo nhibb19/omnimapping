@@ -3,8 +3,13 @@
 {% block content %}
 <div class="page-head">
   <div>
+    <div class="page-kicker">Company Profile</div>
     <h1>{{ report.company_profile.company }}</h1>
-    <div class="muted">{{ report.company_profile.segment }} | {{ report.company_profile.location }} | {{ report.company_profile.commodity }}</div>
+    <p class="summary-note">{{ report.company_profile.segment }} | {{ report.company_profile.location }} | {{ report.company_profile.commodity }}</p>
+    <div class="pill-row status-line">
+      <span class="pill {{ score_tone(report.priority.score) }}">{{ priority_label(report.priority.score) }}</span>
+      <span class="pill {{ score_tone(report.top_site_matches[0].compatibility_score if report.top_site_matches else 0) }}">{{ match_label(report.top_site_matches[0].compatibility_score if report.top_site_matches else 0) }}</span>
+    </div>
   </div>
   <div class="actions">
     <a class="button" href="{{ url_for('companies') }}">Back to companies</a>
@@ -14,9 +19,9 @@
 </div>
 
 <section class="scan-strip" aria-label="Company scan summary">
-  <div class="scan-item"><span class="muted">Priority</span><strong>{{ report.priority.score }}/100</strong></div>
-  <div class="scan-item"><span class="muted">Best site fit</span><strong>{{ report.top_site_matches[0].compatibility_score if report.top_site_matches else 0 }}/100</strong></div>
-  <div class="scan-item"><span class="muted">Freight intensity</span><strong>{{ report.priority.freight_intensity_label or 'Review' }}</strong></div>
+  <div class="scan-item {{ score_tone(report.priority.score) }}"><span class="muted">Priority</span><strong>{{ report.priority.score }}/100</strong></div>
+  <div class="scan-item {{ score_tone(report.top_site_matches[0].compatibility_score if report.top_site_matches else 0) }}"><span class="muted">Best site fit</span><strong>{{ report.top_site_matches[0].compatibility_score if report.top_site_matches else 0 }}/100</strong></div>
+  <div class="scan-item info"><span class="muted">Freight intensity</span><strong>{{ report.priority.freight_intensity_label or 'Review' }}</strong></div>
   <div class="scan-item"><span class="muted">Site quality</span><strong>{{ report.priority.site_match_quality_label or 'Review' }}</strong></div>
 </section>
 
@@ -25,7 +30,7 @@
     <section class="section">
       <h2>Priority</h2>
       <div class="metrics">
-        <div class="metric"><span class="muted">Priority score</span><strong>{{ report.priority.score }}/100</strong></div>
+        <div class="metric"><span class="muted">Priority score</span><strong>{{ report.priority.score }}/100</strong><span class="pill {{ score_tone(report.priority.score) }}">{{ priority_label(report.priority.score) }}</span></div>
         <div class="metric"><span class="muted">Site quality</span><strong>{{ report.priority.site_match_quality_label }}</strong></div>
         <div class="metric"><span class="muted">Freight intensity</span><strong>{{ report.priority.freight_intensity_label }}</strong></div>
       </div>
@@ -87,11 +92,11 @@
         <h3><a href="{{ url_for('site_detail', site_name=best_site.site_name) }}">{{ best_site.site_name }}</a></h3>
         <p class="score">{{ best_site.compatibility_score }}/100 compatibility</p>
         <p>{{ best_site.site_location }}</p>
-        <p>
+        <div class="actions">
           <a class="button primary" href="{{ url_for('opportunity_workspace', company=report.company_profile.company, site=best_site.site_name) }}">Open Workspace</a>
           <a class="button secondary" href="{{ url_for('company_site_comparison', company_name=report.company_profile.company) }}">Compare Sites</a>
           <a class="button" href="{{ url_for('site_detail', site_name=best_site.site_name) }}">Review Site</a>
-        </p>
+        </div>
         <ul class="clean">
           {% for reason in best_site.matching_reasons[:4] %}
             <li>{{ reason }}</li>
@@ -106,7 +111,7 @@
 
 <section class="section">
   <h2>Top Site Matches</h2>
-  <table>
+  <table class="responsive-table">
     <thead>
       <tr>
         <th>Site</th>
@@ -119,17 +124,23 @@
     <tbody>
       {% for match in report.top_site_matches %}
         <tr>
-          <td><a href="{{ url_for('site_detail', site_name=match.site_name) }}"><strong>{{ match.site_name }}</strong></a></td>
-          <td class="score">{{ match.compatibility_score }}/100</td>
-          <td>{{ match.site_location }}</td>
+          <td class="primary-cell"><span class="mobile-label">Site</span><a href="{{ url_for('site_detail', site_name=match.site_name) }}"><strong>{{ match.site_name }}</strong></a></td>
+          <td><span class="mobile-label">Compatibility</span><span class="score-chip {{ score_tone(match.compatibility_score) }}"><strong>{{ match.compatibility_score }}</strong><span>{{ match_label(match.compatibility_score) }}</span></span></td>
+          <td><span class="mobile-label">Location</span>{{ match.site_location }}</td>
           <td>
-            Rail {{ match.site_profile.rail_served }},
-            Transload {{ match.site_profile.transload_available }},
-            Port {{ match.site_profile.port_access }}
+            <span class="mobile-label">Access</span>
+            <div class="pill-row">
+              <span class="pill {{ yes_no_tone(match.site_profile.rail_served) }}">Rail {{ match.site_profile.rail_served or 'Confirm' }}</span>
+              <span class="pill {{ yes_no_tone(match.site_profile.transload_available) }}">Transload {{ match.site_profile.transload_available or 'Confirm' }}</span>
+              <span class="pill {{ yes_no_tone(match.site_profile.port_access) }}">Port {{ match.site_profile.port_access or 'Confirm' }}</span>
+            </div>
           </td>
           <td class="action-cell">
-            <a class="button primary small" href="{{ url_for('opportunity_workspace', company=report.company_profile.company, site=match.site_name) }}">Workspace</a>
-            <a class="button small" href="{{ url_for('site_detail', site_name=match.site_name) }}">Site</a>
+            <span class="mobile-label">Action</span>
+            <div class="action-stack">
+              <a class="button primary small" href="{{ url_for('opportunity_workspace', company=report.company_profile.company, site=match.site_name) }}">Open Workspace</a>
+              <a class="button small" href="{{ url_for('site_detail', site_name=match.site_name) }}">View Site</a>
+            </div>
           </td>
         </tr>
       {% endfor %}

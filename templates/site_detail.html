@@ -3,10 +3,13 @@
 {% block content %}
 <div class="page-head">
   <div>
+    <div class="page-kicker">Site Profile</div>
     <h1>{{ report.site_profile.site_name }}</h1>
-    <div class="muted">{{ report.site_profile.location }} | {{ report.site_profile.acres or 'Unknown' }} acres</div>
+    <p class="summary-note">{{ report.site_profile.location }} | {{ report.site_profile.acres or 'Unknown' }} acres</p>
     {% if report.site_profile.needs_confirmation %}
-      <div class="status-line"><span class="pill warn">Needs confirmation</span></div>
+      <div class="status-line"><span class="pill review">Needs confirmation</span></div>
+    {% else %}
+      <div class="status-line"><span class="pill positive">Current record</span></div>
     {% endif %}
   </div>
   <div class="actions">
@@ -17,17 +20,17 @@
 
 <section class="scan-strip" aria-label="Site scan summary">
   <div class="scan-item"><span class="muted">Acres</span><strong>{{ report.site_profile.acres or 'Confirm' }}</strong></div>
-  <div class="scan-item"><span class="muted">Rail</span><strong>{{ report.site_profile.rail_served or 'Confirm' }}</strong></div>
-  <div class="scan-item"><span class="muted">Confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong></div>
-  <div class="scan-item"><span class="muted">Matched companies</span><strong>{{ report.top_matched_companies|length }}</strong></div>
+  <div class="scan-item {{ yes_no_tone(report.site_profile.rail_served) }}"><span class="muted">Rail</span><strong>{{ report.site_profile.rail_served or 'Confirm' }}</strong></div>
+  <div class="scan-item {{ confidence_tone(report.site_profile.source_confidence) }}"><span class="muted">Confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong></div>
+  <div class="scan-item info"><span class="muted">Matched companies</span><strong>{{ report.top_matched_companies|length }}</strong></div>
 </section>
 
 <section class="section">
   <h2>Site Details</h2>
   <div class="metrics">
-    <div class="metric"><span class="muted">Rail served</span><strong>{{ report.site_profile.rail_served }}</strong></div>
-    <div class="metric"><span class="muted">Transload</span><strong>{{ report.site_profile.transload_available }}</strong></div>
-    <div class="metric"><span class="muted">Port access</span><strong>{{ report.site_profile.port_access }}</strong></div>
+    <div class="metric"><span class="muted">Rail served</span><strong>{{ report.site_profile.rail_served or 'Confirm' }}</strong><span class="pill {{ yes_no_tone(report.site_profile.rail_served) }}">Rail</span></div>
+    <div class="metric"><span class="muted">Transload</span><strong>{{ report.site_profile.transload_available or 'Confirm' }}</strong><span class="pill {{ yes_no_tone(report.site_profile.transload_available) }}">Transload</span></div>
+    <div class="metric"><span class="muted">Port access</span><strong>{{ report.site_profile.port_access or 'Confirm' }}</strong><span class="pill {{ yes_no_tone(report.site_profile.port_access) }}">Port</span></div>
   </div>
   <p><strong>Nearby Class 1:</strong> {{ report.site_profile.nearby_class1 }}</p>
   <p><strong>Interstate access:</strong> {{ report.site_profile.interstate_access }}</p>
@@ -37,7 +40,7 @@
 <section class="section">
   <h2>Data Confidence</h2>
   <div class="metrics">
-    <div class="metric"><span class="muted">Source confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong></div>
+    <div class="metric"><span class="muted">Source confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong><span class="pill {{ confidence_tone(report.site_profile.source_confidence) }}">Confidence</span></div>
     <div class="metric"><span class="muted">Last verified</span><strong>{{ report.site_profile.last_verified or 'Unknown' }}</strong></div>
     <div class="metric"><span class="muted">Status</span><strong>{{ 'Needs confirmation' if report.site_profile.needs_confirmation else 'Current' }}</strong></div>
   </div>
@@ -52,7 +55,7 @@
 
 <section class="section">
   <h2>Top Compatible Companies</h2>
-  <table>
+  <table class="responsive-table">
     <thead>
       <tr>
         <th>Company</th>
@@ -67,15 +70,18 @@
     <tbody>
       {% for match in report.top_matched_companies %}
         <tr>
-          <td><a href="{{ url_for('company_detail', company_name=match.company) }}"><strong>{{ match.company }}</strong></a></td>
-          <td class="score">{{ match.compatibility_score }}/100</td>
-          <td class="score">{{ match.priority_score }}/100</td>
-          <td>{{ match.segment }}</td>
-          <td>{{ match.commodity }}</td>
-          <td>{{ match.matching_reasons[0] if match.matching_reasons else 'General industrial fit' }}</td>
+          <td class="primary-cell"><span class="mobile-label">Company</span><a href="{{ url_for('company_detail', company_name=match.company) }}"><strong>{{ match.company }}</strong></a></td>
+          <td><span class="mobile-label">Compatibility</span><span class="score-chip {{ score_tone(match.compatibility_score) }}"><strong>{{ match.compatibility_score }}</strong><span>{{ match_label(match.compatibility_score) }}</span></span></td>
+          <td><span class="mobile-label">Priority</span><span class="score-chip {{ score_tone(match.priority_score) }}"><strong>{{ match.priority_score }}</strong><span>{{ priority_label(match.priority_score) }}</span></span></td>
+          <td><span class="mobile-label">Segment</span>{{ match.segment }}</td>
+          <td><span class="mobile-label">Commodity</span>{{ match.commodity }}</td>
+          <td class="wide-cell"><span class="mobile-label">Why It Fits</span>{{ match.matching_reasons[0] if match.matching_reasons else 'General industrial fit' }}</td>
           <td class="action-cell">
-            <a class="button primary small" href="{{ url_for('opportunity_workspace', company=match.company, site=report.site_profile.site_name) }}">Workspace</a>
-            <a class="button small" href="{{ url_for('company_detail', company_name=match.company) }}">Company</a>
+            <span class="mobile-label">Action</span>
+            <div class="action-stack">
+              <a class="button primary small" href="{{ url_for('opportunity_workspace', company=match.company, site=report.site_profile.site_name) }}">Open Workspace</a>
+              <a class="button small" href="{{ url_for('company_detail', company_name=match.company) }}">Review Company</a>
+            </div>
           </td>
         </tr>
       {% endfor %}

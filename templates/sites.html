@@ -3,8 +3,12 @@
 {% block content %}
 <div class="page-head">
   <div>
+    <div class="page-kicker">Site Readiness</div>
     <h1>Industrial Sites</h1>
-    <div class="muted">{{ filtered_count }} of {{ total_count }} sites shown | matched against {{ company_count }} companies</div>
+    <p class="summary-note">{{ filtered_count }} of {{ total_count }} sites shown and matched against {{ company_count }} companies. Use confidence and confirmation status to decide which records are ready for outreach.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('companies') }}">View Companies</a>
   </div>
 </div>
 
@@ -66,14 +70,14 @@
 </section>
 
 <section class="scan-strip" aria-label="Site scan summary">
-  <div class="scan-item"><span class="muted">Ready sites</span><strong>{{ scan_summary.ready_sites }}</strong></div>
-  <div class="scan-item"><span class="muted">Need confirmation</span><strong>{{ scan_summary.needs_confirmation }}</strong></div>
-  <div class="scan-item"><span class="muted">Rail + transload</span><strong>{{ scan_summary.rail_transload }}</strong></div>
-  <div class="scan-item"><span class="muted">High confidence</span><strong>{{ scan_summary.high_confidence }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Ready sites</span><strong>{{ scan_summary.ready_sites }}</strong></div>
+  <div class="scan-item review"><span class="muted">Need confirmation</span><strong>{{ scan_summary.needs_confirmation }}</strong></div>
+  <div class="scan-item info"><span class="muted">Rail + transload</span><strong>{{ scan_summary.rail_transload }}</strong></div>
+  <div class="scan-item positive"><span class="muted">High confidence</span><strong>{{ scan_summary.high_confidence }}</strong></div>
 </section>
 
 {% if sites %}
-  <table>
+  <table class="responsive-table">
     <thead>
       <tr>
         <th>Site</th>
@@ -91,32 +95,43 @@
     <tbody>
       {% for site in sites %}
         <tr>
-          <td><a href="{{ url_for('site_detail', site_name=site.site_name) }}"><strong>{{ site.site_name }}</strong></a></td>
-          <td>{{ site.location }}</td>
-          <td>{{ site.acres or 'Unknown' }}</td>
-          <td>{{ site.rail_served }}</td>
-          <td>{{ site.transload_available }}</td>
-          <td>{{ site.port_access }}</td>
-          <td>{{ site.source_confidence or 'Unspecified' }}</td>
+          <td class="primary-cell">
+            <span class="mobile-label">Site</span>
+            <a href="{{ url_for('site_detail', site_name=site.site_name) }}"><strong>{{ site.site_name }}</strong></a>
+            <span class="subtle">{{ site.location }}</span>
+          </td>
+          <td><span class="mobile-label">Location</span>{{ site.location }}</td>
+          <td><span class="mobile-label">Acres</span>{{ site.acres or 'Confirm' }}</td>
+          <td><span class="mobile-label">Rail</span><span class="pill {{ yes_no_tone(site.rail_served) }}">Rail {{ site.rail_served or 'Confirm' }}</span></td>
+          <td><span class="mobile-label">Transload</span><span class="pill {{ yes_no_tone(site.transload_available) }}">Transload {{ site.transload_available or 'Confirm' }}</span></td>
+          <td><span class="mobile-label">Port</span><span class="pill {{ yes_no_tone(site.port_access) }}">Port {{ site.port_access or 'Confirm' }}</span></td>
+          <td><span class="mobile-label">Confidence</span><span class="pill {{ confidence_tone(site.source_confidence) }}">{{ site.source_confidence or 'Unspecified' }}</span></td>
           <td>
+            <span class="mobile-label">Status</span>
             {% if site.needs_confirmation %}
-              <span class="pill warn">Needs confirmation</span>
+              <span class="pill review">Needs confirmation</span>
               {% if site.data_quality_flags %}
                 <span class="subtle">{{ site.data_quality_flags | join(', ') }}</span>
               {% endif %}
             {% else %}
-              <span class="pill">Current</span>
+              <span class="pill positive">Current</span>
             {% endif %}
           </td>
-          <td>{{ site.target_industries }}</td>
+          <td class="wide-cell"><span class="mobile-label">Target Industries</span>{{ site.target_industries }}</td>
           <td class="action-cell">
-            <a class="button primary small" href="{{ url_for('site_detail', site_name=site.site_name) }}">Review</a>
+            <span class="mobile-label">Actions</span>
+            <div class="action-stack">
+              <a class="button primary small" href="{{ url_for('site_detail', site_name=site.site_name) }}">View Site</a>
+            </div>
           </td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
 {% else %}
-  <div class="empty">No sites match the current filters.</div>
+  <div class="empty">
+    <strong>No sites match the current filters.</strong>
+    <div>Try relaxing the readiness, confidence, port, or transload filters.</div>
+  </div>
 {% endif %}
 {% endblock %}

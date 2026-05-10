@@ -212,6 +212,60 @@ def build_site_scan_summary(sites):
     }
 
 
+def score_tone(score):
+    """Return a visual status tone for a 0-100 score."""
+    score = safe_score(score)
+    if score >= 80:
+        return 'positive'
+    if score >= 60:
+        return 'review'
+    return 'warning'
+
+
+def priority_label(score):
+    """Return a short working label for a company priority score."""
+    score = safe_score(score)
+    if score >= 80:
+        return 'High priority'
+    if score >= 70:
+        return 'Qualified'
+    if score >= 50:
+        return 'Review fit'
+    return 'Low priority'
+
+
+def match_label(score):
+    """Return a short working label for a site-match score."""
+    score = safe_score(score)
+    if score >= 80:
+        return 'Strong match'
+    if score >= 60:
+        return 'Workable match'
+    if score > 0:
+        return 'Needs review'
+    return 'Unmatched'
+
+
+def yes_no_tone(value):
+    """Return a visual tone for yes/no capability fields."""
+    normalized = str(value or '').strip().lower()
+    if normalized == 'yes':
+        return 'positive'
+    if normalized == 'no':
+        return 'neutral'
+    return 'review'
+
+
+def confidence_tone(value):
+    """Return a visual tone for source-confidence labels."""
+    normalized = str(value or '').strip().lower()
+    if normalized == 'high':
+        return 'positive'
+    if normalized in {'medium', 'unspecified', ''}:
+        return 'review'
+    return 'neutral'
+
+
 def find_segment_for_company(segments, company):
     """Find the segment row that belongs to a company."""
     return next((segment for segment in segments if segment.get('segment') == company.get('segment')), {})
@@ -477,6 +531,11 @@ def create_app(data_loader=load_data, export_dir="exports"):
             'format_company_location': format_company_location,
             'format_site_location': format_site_location,
             'safe_score': safe_score,
+            'score_tone': score_tone,
+            'priority_label': priority_label,
+            'match_label': match_label,
+            'yes_no_tone': yes_no_tone,
+            'confidence_tone': confidence_tone,
         }
 
     @app.route('/')

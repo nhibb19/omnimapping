@@ -3,12 +3,14 @@
 {% block content %}
 <div class="page-head">
   <div>
+    <div class="page-kicker">Outreach Prioritization</div>
     <h1>Ranked Companies</h1>
-    <div class="muted">{{ filtered_count }} of {{ total_count }} companies shown by current filters</div>
+    <p class="summary-note">{{ filtered_count }} of {{ total_count }} companies shown. Prioritize companies with strong freight fit, a clear site match, and fewer confirmation needs.</p>
   </div>
   <div class="actions">
-    <a class="button" href="{{ url_for('download_top_companies_csv', **request.args) }}">Download CSV</a>
-    <a class="button" href="{{ url_for('download_top_companies_json', **request.args) }}">Download JSON</a>
+    <a class="button" href="{{ url_for('sites') }}">View Sites</a>
+    <a class="button" href="{{ url_for('download_top_companies_csv', **request.args) }}">Export CSV</a>
+    <a class="button" href="{{ url_for('download_top_companies_json', **request.args) }}">Export JSON</a>
   </div>
 </div>
 
@@ -61,14 +63,14 @@
 </section>
 
 <section class="scan-strip" aria-label="Company scan summary">
-  <div class="scan-item"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_for_outreach }}</strong></div>
-  <div class="scan-item"><span class="muted">Need site review</span><strong>{{ scan_summary.needs_site_review }}</strong></div>
-  <div class="scan-item"><span class="muted">Average priority</span><strong>{{ scan_summary.average_priority }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_for_outreach }}</strong></div>
+  <div class="scan-item review"><span class="muted">Need site review</span><strong>{{ scan_summary.needs_site_review }}</strong></div>
+  <div class="scan-item info"><span class="muted">Average priority</span><strong>{{ scan_summary.average_priority }}</strong></div>
   <div class="scan-item"><span class="muted">Shown now</span><strong>{{ companies|length }}</strong></div>
 </section>
 
 {% if companies %}
-  <table>
+  <table class="responsive-table">
     <thead>
       <tr>
         <th>Rank</th>
@@ -85,39 +87,59 @@
     <tbody>
       {% for company in companies %}
         <tr>
-          <td>{{ loop.index }}</td>
-          <td><a href="{{ url_for('company_detail', company_name=company.company) }}"><strong>{{ company.company }}</strong></a></td>
-          <td class="score">{{ safe_score(company.priority_score) }}/100</td>
-          <td>{{ company.segment }}</td>
-          <td>{{ format_company_location(company) }}</td>
-          <td>{{ company.commodity_type or company.commodity }}</td>
-          <td>
-            {% if company.best_site_name %}
-              <a href="{{ url_for('site_detail', site_name=company.best_site_name) }}">{{ company.best_site_name }}</a>
-              <span class="pill">{{ safe_score(company.best_site_match_score) }}/100</span>
-            {% else %}
-              <span class="muted">TBD</span>
-            {% endif %}
+          <td><span class="mobile-label">Rank</span>{{ loop.index }}</td>
+          <td class="primary-cell">
+            <span class="mobile-label">Company</span>
+            <a href="{{ url_for('company_detail', company_name=company.company) }}"><strong>{{ company.company }}</strong></a>
+            <span class="subtle">{{ format_company_location(company) }}</span>
           </td>
           <td>
+            <span class="mobile-label">Score</span>
+            <span class="score-chip {{ score_tone(company.priority_score) }}">
+              <strong>{{ safe_score(company.priority_score) }}</strong>
+              <span>{{ priority_label(company.priority_score) }}</span>
+            </span>
+          </td>
+          <td><span class="mobile-label">Segment</span>{{ company.segment }}</td>
+          <td><span class="mobile-label">Location</span>{{ format_company_location(company) }}</td>
+          <td><span class="mobile-label">Commodity</span>{{ company.commodity_type or company.commodity }}</td>
+          <td>
+            <span class="mobile-label">Best Site</span>
+            {% if company.best_site_name %}
+              <a href="{{ url_for('site_detail', site_name=company.best_site_name) }}">{{ company.best_site_name }}</a>
+              <div class="pill-row status-line">
+                <span class="pill {{ score_tone(company.best_site_match_score) }}">{{ safe_score(company.best_site_match_score) }}/100 {{ match_label(company.best_site_match_score) }}</span>
+              </div>
+            {% else %}
+              <span class="pill review">Site TBD</span>
+            {% endif %}
+          </td>
+          <td class="wide-cell">
+            <span class="mobile-label">Next Action</span>
             {{ company.recommended_next_action }}
             {% if not company.best_site_name %}
               <span class="subtle">Data gap: confirm best-fit site before outreach.</span>
             {% endif %}
           </td>
           <td class="action-cell">
-            <a class="button primary small" href="{{ url_for('company_detail', company_name=company.company) }}">Review</a>
-            {% if company.best_site_name %}
-              <a class="button secondary small" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">Workspace</a>
-            {% else %}
-              <a class="button secondary small" href="{{ url_for('company_site_comparison', company_name=company.company) }}">Compare</a>
-            {% endif %}
+            <span class="mobile-label">Actions</span>
+            <div class="action-stack">
+              <a class="button primary small" href="{{ url_for('company_detail', company_name=company.company) }}">Review Company</a>
+              {% if company.best_site_name %}
+                <a class="button secondary small" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">Open Workspace</a>
+              {% else %}
+                <a class="button secondary small" href="{{ url_for('company_site_comparison', company_name=company.company) }}">Compare Sites</a>
+              {% endif %}
+            </div>
           </td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
 {% else %}
-  <div class="empty">No companies match the current filters.</div>
+  <div class="empty">
+    <strong>No companies match the current filters.</strong>
+    <div>Try lowering the minimum score or broadening the state, segment, or commodity filters.</div>
+  </div>
 {% endif %}
 {% endblock %}

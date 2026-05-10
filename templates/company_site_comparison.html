@@ -3,8 +3,9 @@
 {% block content %}
 <div class="page-head">
   <div>
+    <div class="page-kicker">Site Selection</div>
     <h1>Company Site Comparison</h1>
-    <div class="muted">{{ comparison.company.company }} | {{ comparison.company.location }} | {{ comparison.company.segment }} | {{ comparison.company.commodity }}</div>
+    <p class="summary-note">{{ comparison.company.company }} | {{ comparison.company.location }} | {{ comparison.company.segment }} | {{ comparison.company.commodity }}. Compare fit, readiness, and confirmation needs before selecting an outreach site.</p>
   </div>
   <div class="actions">
     <a class="button" href="{{ url_for('company_detail', company_name=comparison.company.company) }}">Company Profile</a>
@@ -16,7 +17,7 @@
 <section class="section">
   <h2>Decision Snapshot</h2>
   <div class="metrics">
-    <div class="metric"><span class="muted">Priority score</span><strong>{{ comparison.priority.score }}/100</strong></div>
+    <div class="metric"><span class="muted">Priority score</span><strong>{{ comparison.priority.score }}/100</strong><span class="pill {{ score_tone(comparison.priority.score) }}">{{ priority_label(comparison.priority.score) }}</span></div>
     <div class="metric"><span class="muted">Sites compared</span><strong>{{ comparison.compared_sites|length }}</strong></div>
     <div class="metric">
       <span class="muted">First choice</span>
@@ -47,7 +48,7 @@
 <section class="section">
   <h2>Top Compatible Sites</h2>
   {% if comparison.compared_sites %}
-    <table>
+    <table class="responsive-table">
       <thead>
         <tr>
           <th>Rank</th>
@@ -70,25 +71,27 @@
         {% for compared_site in comparison.compared_sites %}
           {% set site = compared_site.site %}
           <tr>
-            <td>{{ compared_site.rank }}</td>
-            <td><a href="{{ url_for('site_detail', site_name=site.site_name) }}"><strong>{{ site.site_name }}</strong></a></td>
-            <td class="score">{{ compared_site.compatibility_score }}/100</td>
-            <td>{{ site.location }}</td>
-            <td>{{ site.acres or 'Confirm' }}</td>
-            <td>{{ site.rail_served or 'Confirm' }}</td>
-            <td>{{ site.nearby_class1 or 'Confirm' }}</td>
-            <td>{{ site.transload_available or 'Confirm' }}</td>
-            <td>{{ site.interstate_access or 'Confirm' }}</td>
-            <td>{{ site.port_access or 'Confirm' }}</td>
-            <td>{{ site.target_industries or 'Confirm' }}</td>
-            <td>
+            <td><span class="mobile-label">Rank</span>{{ compared_site.rank }}</td>
+            <td class="primary-cell"><span class="mobile-label">Site</span><a href="{{ url_for('site_detail', site_name=site.site_name) }}"><strong>{{ site.site_name }}</strong></a><span class="subtle">{{ site.location }}</span></td>
+            <td><span class="mobile-label">Compatibility</span><span class="score-chip {{ score_tone(compared_site.compatibility_score) }}"><strong>{{ compared_site.compatibility_score }}</strong><span>{{ match_label(compared_site.compatibility_score) }}</span></span></td>
+            <td><span class="mobile-label">Location</span>{{ site.location }}</td>
+            <td><span class="mobile-label">Acres</span>{{ site.acres or 'Confirm' }}</td>
+            <td><span class="mobile-label">Rail</span><span class="pill {{ yes_no_tone(site.rail_served) }}">Rail {{ site.rail_served or 'Confirm' }}</span></td>
+            <td><span class="mobile-label">Class 1</span><span class="pill {{ yes_no_tone(site.nearby_class1) }}">Class 1 {{ site.nearby_class1 or 'Confirm' }}</span></td>
+            <td><span class="mobile-label">Transload</span><span class="pill {{ yes_no_tone(site.transload_available) }}">Transload {{ site.transload_available or 'Confirm' }}</span></td>
+            <td><span class="mobile-label">Interstate</span><span class="pill {{ yes_no_tone(site.interstate_access) }}">Interstate {{ site.interstate_access or 'Confirm' }}</span></td>
+            <td><span class="mobile-label">Port</span><span class="pill {{ yes_no_tone(site.port_access) }}">Port {{ site.port_access or 'Confirm' }}</span></td>
+            <td class="wide-cell"><span class="mobile-label">Target Industries</span>{{ site.target_industries or 'Confirm' }}</td>
+            <td class="wide-cell">
+              <span class="mobile-label">Reasons</span>
               <ul class="clean">
                 {% for reason in compared_site.matching_reasons %}
                   <li>{{ reason }}</li>
                 {% endfor %}
               </ul>
             </td>
-            <td>
+            <td class="wide-cell">
+              <span class="mobile-label">Risks / Confirm</span>
               <ul class="clean">
                 {% for item in compared_site.risks_or_confirmation_items[:3] %}
                   <li>{{ item }}</li>
@@ -96,8 +99,11 @@
               </ul>
             </td>
             <td class="action-cell">
-              <a class="button primary small" href="{{ url_for('opportunity_workspace', company=comparison.company.company, site=site.site_name) }}">Workspace</a>
-              <a class="button small" href="{{ url_for('site_detail', site_name=site.site_name) }}">Site</a>
+              <span class="mobile-label">Action</span>
+              <div class="action-stack">
+                <a class="button primary small" href="{{ url_for('opportunity_workspace', company=comparison.company.company, site=site.site_name) }}">Open Workspace</a>
+                <a class="button small" href="{{ url_for('site_detail', site_name=site.site_name) }}">View Site</a>
+              </div>
             </td>
           </tr>
         {% endfor %}
