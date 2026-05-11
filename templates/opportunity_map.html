@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Opportunity Map - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-kicker">Geographic Opportunity View</div>
+    <h1>Opportunity Map</h1>
+    <p class="summary-note">{{ map_data.summary.markers }} mapped nodes from {{ map_data.summary.companies }} companies and {{ map_data.summary.sites }} industrial sites. Use the filters to scan concentrations, then jump into the working views.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('companies') }}">Ranked Companies</a>
+    <a class="button" href="{{ url_for('sites') }}">Industrial Sites</a>
+  </div>
+</div>
+
+<section class="filters">
+  <form class="grid" method="get" action="{{ url_for('opportunity_map') }}">
+    <div>
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" placeholder="Company, site, city, corridor" value="{{ filters.query or '' }}">
+    </div>
+    <div>
+      <label for="state">State</label>
+      <select id="state" name="state">
+        <option value="">All states</option>
+        {% for state in filter_options.states %}
+          <option value="{{ state }}" {% if filters.state == state %}selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="segment">Segment</label>
+      <select id="segment" name="segment">
+        <option value="">All segments</option>
+        {% for segment in filter_options.segments %}
+          <option value="{{ segment }}" {% if filters.segment == segment %}selected{% endif %}>{{ segment }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="commodity">Commodity</label>
+      <select id="commodity" name="commodity">
+        <option value="">All commodities</option>
+        {% for commodity in filter_options.commodities %}
+          <option value="{{ commodity }}" {% if filters.commodity == commodity %}selected{% endif %}>{{ commodity }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="supply_chain">Supply chain</label>
+      <select id="supply_chain" name="supply_chain">
+        <option value="">All groups</option>
+        {% for chain in filter_options.supply_chains %}
+          <option value="{{ chain.value }}" {% if filters.supply_chain == chain.value %}selected{% endif %}>{{ chain.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="min_score">Min priority</label>
+      <input id="min_score" name="min_score" type="number" min="0" max="100" value="{{ filters.min_score if filters.min_score is not none else '' }}">
+    </div>
+    <div>
+      <label for="min_site_fit">Min site fit</label>
+      <input id="min_site_fit" name="min_site_fit" type="number" min="0" max="100" value="{{ filters.min_site_fit if filters.min_site_fit is not none else '' }}">
+    </div>
+    <div>
+      <label for="site_readiness">Site readiness</label>
+      <select id="site_readiness" name="site_readiness">
+        <option value="">All readiness</option>
+        {% for readiness in filter_options.site_readinesses %}
+          <option value="{{ readiness }}" {% if filters.site_readiness == readiness %}selected{% endif %}>{{ readiness }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="source_confidence">Confidence</label>
+      <select id="source_confidence" name="source_confidence">
+        <option value="">All confidence</option>
+        {% for confidence in filter_options.source_confidences %}
+          <option value="{{ confidence }}" {% if filters.source_confidence == confidence %}selected{% endif %}>{{ confidence }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Nodes</label>
+      <div class="checkbox-row">
+        {% for node_type in filter_options.node_types %}
+          <label>
+            <input type="checkbox" name="node_type" value="{{ node_type.value }}" {% if node_type.value in filters.node_types %}checked{% endif %}>
+            {{ node_type.label }}
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="filter-actions">
+      <button class="button primary" type="submit">Apply Filters</button>
+      <a class="button" href="{{ url_for('opportunity_map') }}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="scan-strip" aria-label="Map scan summary">
+  <div class="scan-item positive"><span class="muted">High priority</span><strong>{{ map_data.summary.high_priority }}</strong></div>
+  <div class="scan-item review"><span class="muted">Ready sites</span><strong>{{ map_data.summary.ready_sites }}</strong></div>
+  <div class="scan-item info"><span class="muted">States</span><strong>{{ map_data.summary.states }}</strong></div>
+  <div class="scan-item"><span class="muted">Mapped nodes</span><strong>{{ map_data.summary.markers }}</strong></div>
+</section>
+
+<div class="map-legend" aria-label="Map marker legend">
+  <span class="legend-item"><span class="legend-dot"></span>Company</span>
+  <span class="legend-item"><span class="legend-dot site"></span>Site</span>
+  <span class="legend-item"><span class="legend-dot rail"></span>Rail / transload</span>
+  <span class="legend-item"><span class="legend-dot port"></span>Port</span>
+</div>
+
+<section class="map-layout">
+  <div class="map-shell" id="opportunity-map" aria-label="Interactive opportunity map">
+    <span class="map-axis-label nw">Pacific / Mountain</span>
+    <span class="map-axis-label se">Southeast / Gulf / Atlantic</span>
+    <article class="map-popup" id="map-popup" hidden>
+      <div class="map-popup-head">
+        <div>
+          <h2 id="map-popup-title"></h2>
+          <div class="muted" id="map-popup-subtitle"></div>
+        </div>
+        <button class="map-popup-close" type="button" id="map-popup-close" aria-label="Close map popup">x</button>
+      </div>
+      <div class="pill-row">
+        <span class="pill" id="map-popup-type"></span>
+        <span class="pill" id="map-popup-score"></span>
+      </div>
+      <ul id="map-popup-details"></ul>
+      <div class="map-popup-actions" id="map-popup-actions"></div>
+    </article>
+  </div>
+
+  <aside class="map-side-panel">
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Opportunity Nodes</h2>
+          <p class="summary-note">Sorted by opportunity signal, with companies first.</p>
+        </div>
+      </div>
+      {% if map_data.markers %}
+        <div class="map-list">
+          {% for marker in map_data.markers[:80] %}
+            <div class="map-list-item">
+              <button type="button" data-focus-marker="{{ marker.id }}">{{ marker.label }}</button>
+              <div class="subtle">{{ marker.type|title }} | {{ marker.subtitle }}</div>
+              <div class="pill-row status-line">
+                <span class="pill {{ 'positive' if marker.tone == 'strong' else 'review' if marker.tone == 'workable' else 'neutral' }}">{{ marker.score }}/100</span>
+                {% if marker.segment %}<span class="pill neutral">{{ marker.segment }}</span>{% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty">
+          <strong>No mapped nodes match the current filters.</strong>
+          <div>Try broadening the state, score, confidence, or node-type filters.</div>
+        </div>
+      {% endif %}
+    </section>
+  </aside>
+</section>
+
+<script>
+  const mapMarkers = {{ map_data.markers|tojson }};
+  const mapElement = document.getElementById('opportunity-map');
+  const popup = document.getElementById('map-popup');
+  const popupTitle = document.getElementById('map-popup-title');
+  const popupSubtitle = document.getElementById('map-popup-subtitle');
+  const popupType = document.getElementById('map-popup-type');
+  const popupScore = document.getElementById('map-popup-score');
+  const popupDetails = document.getElementById('map-popup-details');
+  const popupActions = document.getElementById('map-popup-actions');
+  const closePopup = document.getElementById('map-popup-close');
+  const markerButtons = new Map();
+  const bounds = { minLon: -125, maxLon: -66, minLat: 24, maxLat: 50 };
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function projectMarker(marker) {
+    const x = ((marker.lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * 100;
+    const y = ((bounds.maxLat - marker.lat) / (bounds.maxLat - bounds.minLat)) * 100;
+    return { x: clamp(x, 3, 97), y: clamp(y, 4, 96) };
+  }
+
+  function showMarker(marker) {
+    markerButtons.forEach((button) => button.classList.remove('active'));
+    const button = markerButtons.get(marker.id);
+    if (button) button.classList.add('active');
+
+    popupTitle.textContent = marker.label;
+    popupSubtitle.textContent = marker.subtitle || '';
+    popupType.textContent = marker.type;
+    popupScore.textContent = `${marker.score}/100`;
+    popupDetails.innerHTML = '';
+    marker.details.forEach((detail) => {
+      if (!detail || detail.endsWith(': ')) return;
+      const item = document.createElement('li');
+      item.textContent = detail;
+      popupDetails.appendChild(item);
+    });
+    popupActions.innerHTML = '';
+    marker.links.forEach((link) => {
+      const anchor = document.createElement('a');
+      anchor.className = 'button small';
+      anchor.href = link.url;
+      anchor.textContent = link.label;
+      popupActions.appendChild(anchor);
+    });
+    popup.hidden = false;
+  }
+
+  mapMarkers.forEach((marker) => {
+    const projected = projectMarker(marker);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `map-marker ${marker.type} ${marker.tone}`;
+    button.id = marker.id;
+    button.style.left = `${projected.x}%`;
+    button.style.top = `${projected.y}%`;
+    button.style.setProperty('--marker-size', `${marker.size}px`);
+    button.setAttribute('aria-label', `${marker.type}: ${marker.label}`);
+    const glyph = document.createElement('span');
+    glyph.textContent = marker.type === 'company' ? 'C' : marker.type === 'site' ? 'S' : marker.type === 'rail' ? 'R' : 'P';
+    button.appendChild(glyph);
+    button.addEventListener('click', () => showMarker(marker));
+    markerButtons.set(marker.id, button);
+    mapElement.appendChild(button);
+  });
+
+  document.querySelectorAll('[data-focus-marker]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const marker = mapMarkers.find((item) => item.id === button.dataset.focusMarker);
+      if (marker) showMarker(marker);
+    });
+  });
+
+  closePopup.addEventListener('click', () => {
+    popup.hidden = true;
+    markerButtons.forEach((button) => button.classList.remove('active'));
+  });
+
+  if (mapMarkers.length) {
+    showMarker(mapMarkers[0]);
+  }
+</script>
+{% endblock %}

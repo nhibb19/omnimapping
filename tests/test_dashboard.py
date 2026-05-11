@@ -15,6 +15,7 @@ from dashboard import (
     build_company_site_comparison,
     build_company_scan_summary,
     build_opportunity_workspace,
+    build_opportunity_map,
     build_site_scan_summary,
     build_supply_chain_filter_options,
     build_supply_chain_scan_summary,
@@ -208,6 +209,52 @@ class TestOmniMappingDashboard(unittest.TestCase):
 
         summary = build_company_scan_summary(filtered)
         self.assertEqual(summary['ready_for_outreach'], 1)
+
+    def test_opportunity_map_payload_derives_nodes_and_filters(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        with self.app.test_request_context('/map?state=TX&node_type=company&node_type=site'):
+            map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': 'TX',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': 1,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        labels = {marker['label'] for marker in map_data['markers']}
+        self.assertIn('Acme Chemicals', labels)
+        self.assertIn('Houston Rail Park', labels)
+        self.assertNotIn('Front Range Logistics', labels)
+        self.assertTrue(all(marker['type'] in {'company', 'site'} for marker in map_data['markers']))
+        self.assertTrue(all('lat' in marker and 'lon' in marker for marker in map_data['markers']))
+        self.assertEqual(map_data['summary']['companies'], 1)
+
+    def test_opportunity_map_route_shows_filters_markers_and_workflow_links(self):
+        response = self.client.get('/map?state=TX&segment=Chemicals&commodity=chemicals&min_score=1')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Opportunity Map', body)
+        self.assertIn('Acme Chemicals', body)
+        self.assertIn('Houston Rail Park', body)
+        self.assertIn('Houston Hub', body)
+        self.assertIn('Supply chain', body)
+        self.assertIn('Min site fit', body)
+        self.assertIn('Rail / transload', body)
+        self.assertIn('/companies/Acme%20Chemicals/site-comparison', body)
+        self.assertIn('/workspace?company=Acme+Chemicals', body)
+        self.assertIn('site=Houston+Rail+Park', body)
 
     def test_company_detail_page_shows_priority_site_and_next_action(self):
         response = self.client.get('/companies/Acme%20Chemicals')

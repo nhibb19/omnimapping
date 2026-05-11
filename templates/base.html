@@ -503,6 +503,179 @@
       color: var(--text);
       font-size: 16px;
     }
+    .map-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.8fr) minmax(300px, 0.8fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .map-shell {
+      position: relative;
+      min-height: 620px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(20, 107, 133, 0.08) 1px, transparent 1px),
+        linear-gradient(rgba(20, 107, 133, 0.08) 1px, transparent 1px),
+        linear-gradient(160deg, #f9fbf8 0%, #eef6f0 47%, #e8f1f5 100%);
+      background-size: 8.33% 100%, 100% 12.5%, 100% 100%;
+      box-shadow: var(--shadow);
+    }
+    .map-shell::before {
+      content: "";
+      position: absolute;
+      inset: 7% 5% 8% 6%;
+      border: 2px solid rgba(20, 107, 133, 0.2);
+      border-radius: 47% 39% 44% 34%;
+      transform: rotate(-4deg);
+      background: rgba(255, 255, 255, 0.28);
+    }
+    .map-axis-label {
+      position: absolute;
+      color: rgba(70, 82, 97, 0.72);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+    .map-axis-label.nw { top: 14px; left: 16px; }
+    .map-axis-label.se { right: 16px; bottom: 12px; }
+    .map-marker {
+      position: absolute;
+      width: var(--marker-size);
+      height: var(--marker-size);
+      border-radius: 999px;
+      border: 2px solid #ffffff;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 8px rgba(22, 32, 43, 0.25);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 900;
+      padding: 0;
+    }
+    .map-marker:hover, .map-marker.active { outline: 3px solid rgba(11, 80, 102, 0.25); z-index: 5; }
+    .map-marker.company { border-radius: 999px; }
+    .map-marker.site { border-radius: 6px; }
+    .map-marker.rail {
+      border-radius: 2px;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+    .map-marker.rail span { transform: rotate(-45deg); }
+    .map-marker.port { clip-path: polygon(50% 0%, 100% 35%, 80% 100%, 20% 100%, 0% 35%); border-radius: 0; }
+    .map-marker.strong { background: #13795b; }
+    .map-marker.workable { background: #946200; }
+    .map-marker.watch { background: #b42318; }
+    .map-marker.infrastructure { background: #153e75; }
+    .map-marker.neutral { background: #66717f; }
+    .map-marker.port { background: #0b5066; }
+    .map-popup {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      width: min(360px, calc(100% - 32px));
+      background: #ffffff;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      padding: 14px;
+      box-shadow: 0 12px 30px rgba(22, 32, 43, 0.18);
+      z-index: 6;
+    }
+    .map-popup[hidden] { display: none; }
+    .map-popup-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .map-popup h2 { font-size: 18px; margin: 0 0 3px; }
+    .map-popup-close {
+      border: 0;
+      background: var(--panel-soft);
+      border-radius: 999px;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      font-weight: 900;
+    }
+    .map-popup ul { margin: 8px 0 10px; padding-left: 18px; }
+    .map-popup-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .map-side-panel {
+      display: grid;
+      gap: 10px;
+    }
+    .map-list {
+      display: grid;
+      gap: 8px;
+      max-height: 620px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .map-list-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 10px;
+      box-shadow: var(--shadow);
+    }
+    .map-list-item button {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--accent-strong);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      text-align: left;
+    }
+    .map-legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted-strong);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .legend-dot.site { border-radius: 3px; background: #13795b; }
+    .legend-dot.rail { border-radius: 2px; background: #153e75; transform: rotate(45deg); }
+    .legend-dot.port { border-radius: 0; clip-path: polygon(50% 0%, 100% 35%, 80% 100%, 20% 100%, 0% 35%); background: #0b5066; }
+    .checkbox-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      min-height: 38px;
+    }
+    .checkbox-row label {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+      margin: 0;
+      text-transform: none;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .checkbox-row input {
+      width: auto;
+      min-height: 0;
+    }
     .summary-note {
       margin: 0;
       color: var(--muted);
@@ -527,8 +700,9 @@
       .page-head, .topbar { flex-direction: column; align-items: stretch; }
       .section-head { flex-direction: column; }
       .actions { justify-content: flex-start; }
-      form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid, .chain-grid { grid-template-columns: 1fr; }
+      form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid, .chain-grid, .map-layout { grid-template-columns: 1fr; }
       form.grid { gap: 12px; }
+      .map-shell { min-height: 460px; }
       .chain-flow { grid-template-columns: 1fr; overflow: visible; }
       .flow-step { min-width: 0; }
       .flow-step:not(:last-child)::after { display: none; }
@@ -578,6 +752,7 @@
       <div class="brand">OmniMapping Dashboard</div>
       <nav>
         <a href="{{ url_for('companies') }}">Ranked Companies</a>
+        <a href="{{ url_for('opportunity_map') }}">Opportunity Map</a>
         <a href="{{ url_for('sites') }}">Industrial Sites</a>
         <a href="{{ url_for('supply_chains') }}">Supply Chains</a>
         <a href="{{ url_for('health') }}">Health</a>
