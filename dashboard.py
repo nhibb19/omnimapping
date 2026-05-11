@@ -410,6 +410,18 @@ def map_marker_tone(score):
     return 'watch'
 
 
+def map_marker_tone_label(tone):
+    """Return a short readable label for map marker tones."""
+    return {
+        'strong': 'Strong signal',
+        'workable': 'Workable signal',
+        'watch': 'Watch list',
+        'infrastructure': 'Infrastructure',
+        'neutral': 'Context',
+        'port': 'Port access',
+    }.get(tone, 'Mapped node')
+
+
 def has_map_opportunity_filters(filters):
     """Return whether map filters should narrow infrastructure context."""
     return any([
@@ -461,6 +473,7 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
             if lat is None or lon is None:
                 continue
             priority_score = safe_score(company.get('priority_score', 0))
+            tone = map_marker_tone(priority_score)
             best_site = company.get('best_site_name') or company.get('best_recommended_site') or ''
             details = [
                 f"Priority {priority_score}/100 ({priority_label(priority_score)})",
@@ -478,11 +491,13 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'subtitle': format_company_location(company),
                 'lat': lat,
                 'lon': lon,
-                'tone': map_marker_tone(priority_score),
+                'tone': tone,
+                'tone_label': map_marker_tone_label(tone),
                 'score': priority_score,
                 'size': 16 + min(24, priority_score * 0.22),
                 'segment': company.get('segment', ''),
                 'commodity': company.get('commodity_type') or company.get('commodity', ''),
+                'next_step': company.get('recommended_next_action') or 'Open the workspace to qualify outreach and site fit.',
                 'details': details,
                 'links': [
                     {'label': 'Company', 'url': url_for('company_detail', company_name=company.get('company', ''))},
@@ -532,6 +547,7 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 continue
             readiness = site.get('research_readiness') or build_research_readiness(site)
             score = safe_score(readiness.get('score', 0))
+            tone = map_marker_tone(score)
             markers.append({
                 'id': f"site-{safe_filename_token(site.get('site_name'), default='site')}",
                 'type': 'site',
@@ -539,11 +555,13 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'subtitle': site.get('location') or format_site_location(site),
                 'lat': lat,
                 'lon': lon,
-                'tone': map_marker_tone(score),
+                'tone': tone,
+                'tone_label': map_marker_tone_label(tone),
                 'score': score,
                 'size': 14 + min(22, score * 0.2),
                 'segment': site.get('target_industries', ''),
                 'commodity': site.get('target_industries', ''),
+                'next_step': 'Open the site profile to review readiness, gaps, and compatible companies.',
                 'details': [
                     f"Research {score}/100 ({readiness.get('label', '')})",
                     f"Rail served: {site.get('rail_served') or 'Confirm'}",
@@ -577,6 +595,7 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
             ):
                 continue
             logistics_score = safe_score(int(parse_float(rail.get('logistics_score')) or 0) * 10)
+            tone = 'infrastructure' if yes_no_value(rail.get('transload_hub')) else 'neutral'
             markers.append({
                 'id': f"rail-{safe_filename_token(rail.get('location'), default='rail')}",
                 'type': 'rail',
@@ -584,11 +603,13 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'subtitle': rail.get('type', ''),
                 'lat': lat,
                 'lon': lon,
-                'tone': 'infrastructure' if yes_no_value(rail.get('transload_hub')) else 'neutral',
+                'tone': tone,
+                'tone_label': map_marker_tone_label(tone),
                 'score': logistics_score,
                 'size': 13 + min(17, logistics_score * 0.15),
                 'segment': rail.get('type', ''),
                 'commodity': '',
+                'next_step': 'Use this infrastructure node as nearby context for visible companies and sites.',
                 'details': [
                     f"Logistics {rail.get('logistics_score', '')}/10",
                     f"Rail connections {rail.get('rail_connections', '')}",
@@ -618,10 +639,12 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'lat': lat,
                 'lon': lon,
                 'tone': 'port',
+                'tone_label': map_marker_tone_label('port'),
                 'score': 70 if port_info.get('port_accessible') else 45,
                 'size': 18,
                 'segment': 'Port',
                 'commodity': '',
+                'next_step': 'Use this port node to qualify multimodal optionality for the visible company set.',
                 'details': [
                     'Port node derived from visible company geography',
                     f"Last matched distance: {port_info.get('distance_miles')} miles",
@@ -636,6 +659,17 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
         state_counts[state] = state_counts.get(state, 0) + 1
 
     markers.sort(key=lambda marker: (marker['type'] != 'company', -safe_score(marker.get('score', 0)), marker['label']))
+    type_counts = {}
+    for marker in markers:
+        type_counts[marker['type']] = type_counts.get(marker['type'], 0) + 1
+    top_opportunities = [
+        marker for marker in markers
+        if marker.get('type') == 'company'
+    ][:5]
+    top_states = [
+        {'state': state, 'count': count}
+        for state, count in sorted(state_counts.items(), key=lambda item: (-item[1], item[0]))[:6]
+    ]
     return {
         'markers': markers,
         'summary': {
@@ -653,6 +687,9 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
             'states': len(state_counts),
         },
         'state_counts': dict(sorted(state_counts.items())),
+        'top_states': top_states,
+        'type_counts': type_counts,
+        'top_opportunities': top_opportunities,
     }
 
 

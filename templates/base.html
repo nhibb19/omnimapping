@@ -503,6 +503,44 @@
       color: var(--text);
       font-size: 16px;
     }
+    .map-filters form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 0.32fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+    .map-filter-block {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .filter-group-head {
+      display: grid;
+      gap: 2px;
+    }
+    .filter-group-head h2 {
+      margin: 0;
+      font-size: 15px;
+    }
+    .filter-group-head p { margin: 0; }
+    .map-filter-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.25fr) repeat(4, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .map-layer-block {
+      border-left: 1px solid var(--border);
+      padding-left: 16px;
+    }
+    .map-layer-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      overflow: hidden;
+    }
+    .map-layer-row label {
+      justify-content: flex-start;
+      text-align: left;
+    }
     .map-layout {
       display: grid;
       grid-template-columns: minmax(0, 1.8fr) minmax(300px, 0.8fr);
@@ -559,14 +597,15 @@
       padding: 0;
     }
     .map-marker:hover, .map-marker.active { outline: 3px solid rgba(11, 80, 102, 0.25); z-index: 5; }
-    .map-marker.company { border-radius: 999px; }
-    .map-marker.site { border-radius: 6px; }
+    .map-marker.company { border-radius: 999px; z-index: 4; }
+    .map-marker.site { border-radius: 6px; z-index: 3; }
     .map-marker.rail {
       border-radius: 2px;
       transform: translate(-50%, -50%) rotate(45deg);
+      z-index: 2;
     }
     .map-marker.rail span { transform: rotate(-45deg); }
-    .map-marker.port { clip-path: polygon(50% 0%, 100% 35%, 80% 100%, 20% 100%, 0% 35%); border-radius: 0; }
+    .map-marker.port { clip-path: polygon(50% 0%, 100% 35%, 80% 100%, 20% 100%, 0% 35%); border-radius: 0; z-index: 1; }
     .map-marker.strong { background: #13795b; }
     .map-marker.workable { background: #946200; }
     .map-marker.watch { background: #b42318; }
@@ -609,6 +648,70 @@
       display: grid;
       gap: 10px;
     }
+    .selected-node-card {
+      border-color: var(--border-strong);
+    }
+    .selected-node-title {
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+    .selected-node-empty {
+      color: var(--muted);
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--panel-soft);
+    }
+    .map-intel-panel h3 {
+      margin: 4px 0 8px;
+      color: var(--muted-strong);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .map-chip-list {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 14px;
+    }
+    .map-chip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--accent-strong);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      padding: 8px 10px;
+      text-align: left;
+    }
+    .map-chip span {
+      color: var(--muted-strong);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .state-density-list {
+      display: grid;
+      gap: 6px;
+    }
+    .state-density-list div {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      padding: 5px 0;
+    }
+    .state-density-list div:last-child { border-bottom: 0; }
+    .state-density-list strong { color: var(--text); }
     .map-list {
       display: grid;
       gap: 8px;
@@ -622,6 +725,11 @@
       background: var(--panel);
       padding: 10px;
       box-shadow: var(--shadow);
+    }
+    .map-list-item.active {
+      border-color: var(--accent);
+      background: #f2f8f9;
+      box-shadow: 0 0 0 3px rgba(20, 107, 133, 0.12);
     }
     .map-list-item button {
       border: 0;
@@ -701,6 +809,13 @@
       .section-head { flex-direction: column; }
       .actions { justify-content: flex-start; }
       form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid, .chain-grid, .map-layout { grid-template-columns: 1fr; }
+      .map-filters form, .map-filter-grid { grid-template-columns: 1fr; }
+      .map-layer-block {
+        border-left: 0;
+        border-top: 1px solid var(--border);
+        padding-left: 0;
+        padding-top: 14px;
+      }
       form.grid { gap: 12px; }
       .map-shell { min-height: 460px; }
       .chain-flow { grid-template-columns: 1fr; overflow: visible; }

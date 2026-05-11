@@ -239,6 +239,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertTrue(all(marker['type'] in {'company', 'site'} for marker in map_data['markers']))
         self.assertTrue(all('lat' in marker and 'lon' in marker for marker in map_data['markers']))
         self.assertEqual(map_data['summary']['companies'], 1)
+        self.assertEqual(map_data['type_counts']['company'], 1)
+        self.assertEqual(map_data['top_opportunities'][0]['label'], 'Acme Chemicals')
+        self.assertEqual(map_data['top_states'][0]['state'], 'TX')
 
     def test_opportunity_map_route_shows_filters_markers_and_workflow_links(self):
         response = self.client.get('/map?state=TX&segment=Chemicals&commodity=chemicals&min_score=1')
@@ -246,6 +249,11 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
         self.assertIn('Opportunity Map', body)
+        self.assertIn('Opportunity Filters', body)
+        self.assertIn('Map Layers', body)
+        self.assertIn('Map Intelligence', body)
+        self.assertIn('Top mapped opportunities', body)
+        self.assertIn('Selected Node', body)
         self.assertIn('Acme Chemicals', body)
         self.assertIn('Houston Rail Park', body)
         self.assertIn('Houston Hub', body)

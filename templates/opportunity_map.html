@@ -13,77 +13,86 @@
   </div>
 </div>
 
-<section class="filters">
-  <form class="grid" method="get" action="{{ url_for('opportunity_map') }}">
-    <div>
-      <label for="q">Search</label>
-      <input id="q" name="q" type="search" placeholder="Company, site, city, corridor" value="{{ filters.query or '' }}">
+<section class="filters map-filters">
+  <form method="get" action="{{ url_for('opportunity_map') }}">
+    <div class="map-filter-block">
+      <div class="filter-group-head">
+        <h2>Opportunity Filters</h2>
+      </div>
+      <div class="map-filter-grid">
+        <div class="map-filter-wide">
+          <label for="q">Search</label>
+          <input id="q" name="q" type="search" placeholder="Company, site, city, corridor" value="{{ filters.query or '' }}">
+        </div>
+        <div>
+          <label for="state">State</label>
+          <select id="state" name="state">
+            <option value="">All states</option>
+            {% for state in filter_options.states %}
+              <option value="{{ state }}" {% if filters.state == state %}selected{% endif %}>{{ state }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="segment">Segment</label>
+          <select id="segment" name="segment">
+            <option value="">All segments</option>
+            {% for segment in filter_options.segments %}
+              <option value="{{ segment }}" {% if filters.segment == segment %}selected{% endif %}>{{ segment }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="commodity">Commodity</label>
+          <select id="commodity" name="commodity">
+            <option value="">All commodities</option>
+            {% for commodity in filter_options.commodities %}
+              <option value="{{ commodity }}" {% if filters.commodity == commodity %}selected{% endif %}>{{ commodity }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="supply_chain">Supply chain</label>
+          <select id="supply_chain" name="supply_chain">
+            <option value="">All groups</option>
+            {% for chain in filter_options.supply_chains %}
+              <option value="{{ chain.value }}" {% if filters.supply_chain == chain.value %}selected{% endif %}>{{ chain.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="min_score">Min priority</label>
+          <input id="min_score" name="min_score" type="number" min="0" max="100" value="{{ filters.min_score if filters.min_score is not none else '' }}">
+        </div>
+        <div>
+          <label for="min_site_fit">Min site fit</label>
+          <input id="min_site_fit" name="min_site_fit" type="number" min="0" max="100" value="{{ filters.min_site_fit if filters.min_site_fit is not none else '' }}">
+        </div>
+        <div>
+          <label for="site_readiness">Site readiness</label>
+          <select id="site_readiness" name="site_readiness">
+            <option value="">All readiness</option>
+            {% for readiness in filter_options.site_readinesses %}
+              <option value="{{ readiness }}" {% if filters.site_readiness == readiness %}selected{% endif %}>{{ readiness }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="source_confidence">Confidence</label>
+          <select id="source_confidence" name="source_confidence">
+            <option value="">All confidence</option>
+            {% for confidence in filter_options.source_confidences %}
+              <option value="{{ confidence }}" {% if filters.source_confidence == confidence %}selected{% endif %}>{{ confidence }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
     </div>
-    <div>
-      <label for="state">State</label>
-      <select id="state" name="state">
-        <option value="">All states</option>
-        {% for state in filter_options.states %}
-          <option value="{{ state }}" {% if filters.state == state %}selected{% endif %}>{{ state }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="segment">Segment</label>
-      <select id="segment" name="segment">
-        <option value="">All segments</option>
-        {% for segment in filter_options.segments %}
-          <option value="{{ segment }}" {% if filters.segment == segment %}selected{% endif %}>{{ segment }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="commodity">Commodity</label>
-      <select id="commodity" name="commodity">
-        <option value="">All commodities</option>
-        {% for commodity in filter_options.commodities %}
-          <option value="{{ commodity }}" {% if filters.commodity == commodity %}selected{% endif %}>{{ commodity }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="supply_chain">Supply chain</label>
-      <select id="supply_chain" name="supply_chain">
-        <option value="">All groups</option>
-        {% for chain in filter_options.supply_chains %}
-          <option value="{{ chain.value }}" {% if filters.supply_chain == chain.value %}selected{% endif %}>{{ chain.label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="min_score">Min priority</label>
-      <input id="min_score" name="min_score" type="number" min="0" max="100" value="{{ filters.min_score if filters.min_score is not none else '' }}">
-    </div>
-    <div>
-      <label for="min_site_fit">Min site fit</label>
-      <input id="min_site_fit" name="min_site_fit" type="number" min="0" max="100" value="{{ filters.min_site_fit if filters.min_site_fit is not none else '' }}">
-    </div>
-    <div>
-      <label for="site_readiness">Site readiness</label>
-      <select id="site_readiness" name="site_readiness">
-        <option value="">All readiness</option>
-        {% for readiness in filter_options.site_readinesses %}
-          <option value="{{ readiness }}" {% if filters.site_readiness == readiness %}selected{% endif %}>{{ readiness }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="source_confidence">Confidence</label>
-      <select id="source_confidence" name="source_confidence">
-        <option value="">All confidence</option>
-        {% for confidence in filter_options.source_confidences %}
-          <option value="{{ confidence }}" {% if filters.source_confidence == confidence %}selected{% endif %}>{{ confidence }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label>Nodes</label>
-      <div class="checkbox-row">
+    <div class="map-filter-block map-layer-block">
+      <div class="filter-group-head">
+        <h2>Map Layers</h2>
+      </div>
+      <div class="checkbox-row map-layer-row">
         {% for node_type in filter_options.node_types %}
           <label>
             <input type="checkbox" name="node_type" value="{{ node_type.value }}" {% if node_type.value in filters.node_types %}checked{% endif %}>
@@ -91,10 +100,10 @@
           </label>
         {% endfor %}
       </div>
-    </div>
-    <div class="filter-actions">
-      <button class="button primary" type="submit">Apply Filters</button>
-      <a class="button" href="{{ url_for('opportunity_map') }}">Reset</a>
+      <div class="filter-actions">
+        <button class="button primary" type="submit">Apply Filters</button>
+        <a class="button" href="{{ url_for('opportunity_map') }}">Reset</a>
+      </div>
     </div>
   </form>
 </section>
@@ -107,10 +116,10 @@
 </section>
 
 <div class="map-legend" aria-label="Map marker legend">
-  <span class="legend-item"><span class="legend-dot"></span>Company</span>
-  <span class="legend-item"><span class="legend-dot site"></span>Site</span>
-  <span class="legend-item"><span class="legend-dot rail"></span>Rail / transload</span>
-  <span class="legend-item"><span class="legend-dot port"></span>Port</span>
+  <span class="legend-item"><span class="legend-dot"></span>Company <strong>{{ map_data.type_counts.company or 0 }}</strong></span>
+  <span class="legend-item"><span class="legend-dot site"></span>Site <strong>{{ map_data.type_counts.site or 0 }}</strong></span>
+  <span class="legend-item"><span class="legend-dot rail"></span>Rail / transload <strong>{{ map_data.type_counts.rail or 0 }}</strong></span>
+  <span class="legend-item"><span class="legend-dot port"></span>Port <strong>{{ map_data.type_counts.port or 0 }}</strong></span>
 </div>
 
 <section class="map-layout">
@@ -135,6 +144,50 @@
   </div>
 
   <aside class="map-side-panel">
+    <section class="section selected-node-card" id="selected-node-card">
+      <div class="section-head">
+        <div>
+          <h2>Selected Node</h2>
+          <p class="summary-note" id="selected-node-subtitle">Pick a marker or list item to plan the next move.</p>
+        </div>
+      </div>
+      <div class="selected-node-empty" id="selected-node-empty">No mapped node selected.</div>
+      <div id="selected-node-content" hidden>
+        <div class="selected-node-title" id="selected-node-title"></div>
+        <div class="pill-row status-line">
+          <span class="pill" id="selected-node-type"></span>
+          <span class="pill" id="selected-node-score"></span>
+        </div>
+        <p class="opportunity-note" id="selected-node-next"></p>
+        <div class="map-popup-actions" id="selected-node-actions"></div>
+      </div>
+    </section>
+
+    <section class="section map-intel-panel">
+      <div class="section-head">
+        <div>
+          <h2>Map Intelligence</h2>
+          <p class="summary-note">Where the filtered opportunity set is concentrating.</p>
+        </div>
+      </div>
+      {% if map_data.top_opportunities %}
+        <h3>Top mapped opportunities</h3>
+        <div class="map-chip-list">
+          {% for marker in map_data.top_opportunities %}
+            <button type="button" class="map-chip" data-focus-marker="{{ marker.id }}">{{ marker.label }} <span>{{ marker.score }}/100</span></button>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if map_data.top_states %}
+        <h3>State concentrations</h3>
+        <div class="state-density-list">
+          {% for state in map_data.top_states %}
+            <div><span>{{ state.state }}</span><strong>{{ state.count }}</strong></div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
     <section class="section">
       <div class="section-head">
         <div>
@@ -145,12 +198,12 @@
       {% if map_data.markers %}
         <div class="map-list">
           {% for marker in map_data.markers[:80] %}
-            <div class="map-list-item">
+            <div class="map-list-item" data-marker-card="{{ marker.id }}">
               <button type="button" data-focus-marker="{{ marker.id }}">{{ marker.label }}</button>
               <div class="subtle">{{ marker.type|title }} | {{ marker.subtitle }}</div>
               <div class="pill-row status-line">
                 <span class="pill {{ 'positive' if marker.tone == 'strong' else 'review' if marker.tone == 'workable' else 'neutral' }}">{{ marker.score }}/100</span>
-                {% if marker.segment %}<span class="pill neutral">{{ marker.segment }}</span>{% endif %}
+                <span class="pill neutral">{{ marker.tone_label }}</span>
               </div>
             </div>
           {% endfor %}
@@ -176,7 +229,16 @@
   const popupDetails = document.getElementById('map-popup-details');
   const popupActions = document.getElementById('map-popup-actions');
   const closePopup = document.getElementById('map-popup-close');
+  const selectedNodeEmpty = document.getElementById('selected-node-empty');
+  const selectedNodeContent = document.getElementById('selected-node-content');
+  const selectedNodeTitle = document.getElementById('selected-node-title');
+  const selectedNodeSubtitle = document.getElementById('selected-node-subtitle');
+  const selectedNodeType = document.getElementById('selected-node-type');
+  const selectedNodeScore = document.getElementById('selected-node-score');
+  const selectedNodeNext = document.getElementById('selected-node-next');
+  const selectedNodeActions = document.getElementById('selected-node-actions');
   const markerButtons = new Map();
+  const markerCards = new Map();
   const bounds = { minLon: -125, maxLon: -66, minLat: 24, maxLat: 50 };
 
   function clamp(value, min, max) {
@@ -189,10 +251,49 @@
     return { x: clamp(x, 3, 97), y: clamp(y, 4, 96) };
   }
 
+  function spreadProjectedMarkers(markers) {
+    const grouped = new Map();
+    markers.forEach((marker) => {
+      const projected = projectMarker(marker);
+      const key = `${Math.round(projected.x / 2)}:${Math.round(projected.y / 2)}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push({ marker, projected });
+    });
+
+    grouped.forEach((items) => {
+      if (items.length === 1) {
+        items[0].marker.projected = items[0].projected;
+        return;
+      }
+      items.forEach((item, index) => {
+        const angle = (Math.PI * 2 * index) / items.length;
+        const radius = Math.min(5, 1.5 + items.length * 0.35);
+        item.marker.projected = {
+          x: clamp(item.projected.x + Math.cos(angle) * radius, 3, 97),
+          y: clamp(item.projected.y + Math.sin(angle) * radius, 4, 96),
+        };
+      });
+    });
+  }
+
+  function renderActions(container, marker) {
+    container.innerHTML = '';
+    marker.links.forEach((link) => {
+      const anchor = document.createElement('a');
+      anchor.className = 'button small';
+      anchor.href = link.url;
+      anchor.textContent = link.label;
+      container.appendChild(anchor);
+    });
+  }
+
   function showMarker(marker) {
     markerButtons.forEach((button) => button.classList.remove('active'));
+    markerCards.forEach((card) => card.classList.remove('active'));
     const button = markerButtons.get(marker.id);
     if (button) button.classList.add('active');
+    const card = markerCards.get(marker.id);
+    if (card) card.classList.add('active');
 
     popupTitle.textContent = marker.label;
     popupSubtitle.textContent = marker.subtitle || '';
@@ -205,19 +306,23 @@
       item.textContent = detail;
       popupDetails.appendChild(item);
     });
-    popupActions.innerHTML = '';
-    marker.links.forEach((link) => {
-      const anchor = document.createElement('a');
-      anchor.className = 'button small';
-      anchor.href = link.url;
-      anchor.textContent = link.label;
-      popupActions.appendChild(anchor);
-    });
+    renderActions(popupActions, marker);
     popup.hidden = false;
+
+    selectedNodeEmpty.hidden = true;
+    selectedNodeContent.hidden = false;
+    selectedNodeTitle.textContent = marker.label;
+    selectedNodeSubtitle.textContent = marker.subtitle || 'Mapped opportunity context';
+    selectedNodeType.textContent = marker.type;
+    selectedNodeScore.textContent = `${marker.score}/100`;
+    selectedNodeNext.textContent = marker.next_step || 'Open the matching workflow to continue qualification.';
+    renderActions(selectedNodeActions, marker);
   }
 
+  spreadProjectedMarkers(mapMarkers);
+
   mapMarkers.forEach((marker) => {
-    const projected = projectMarker(marker);
+    const projected = marker.projected || projectMarker(marker);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `map-marker ${marker.type} ${marker.tone}`;
@@ -226,6 +331,7 @@
     button.style.top = `${projected.y}%`;
     button.style.setProperty('--marker-size', `${marker.size}px`);
     button.setAttribute('aria-label', `${marker.type}: ${marker.label}`);
+    button.title = `${marker.label} | ${marker.tone_label || marker.type} | ${marker.score}/100`;
     const glyph = document.createElement('span');
     glyph.textContent = marker.type === 'company' ? 'C' : marker.type === 'site' ? 'S' : marker.type === 'rail' ? 'R' : 'P';
     button.appendChild(glyph);
@@ -241,9 +347,14 @@
     });
   });
 
+  document.querySelectorAll('[data-marker-card]').forEach((card) => {
+    markerCards.set(card.dataset.markerCard, card);
+  });
+
   closePopup.addEventListener('click', () => {
     popup.hidden = true;
     markerButtons.forEach((button) => button.classList.remove('active'));
+    markerCards.forEach((card) => card.classList.remove('active'));
   });
 
   if (mapMarkers.length) {
