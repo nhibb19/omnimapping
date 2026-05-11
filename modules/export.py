@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 
 from .ui import get_priority_reasons
+from .data_quality import build_research_readiness
 
 EXPORT_FIELDNAMES = [
     'company', 'company_info', 'segment', 'location', 'commodity', 'commodity_type',
@@ -415,6 +416,7 @@ def find_site_for_report(sites, site_name):
 
 def build_site_profile(site):
     """Serialize one industrial site profile for JSON exports."""
+    research_readiness = site.get('research_readiness') or build_research_readiness(site)
     return {
         'site_name': site.get('site_name', ''),
         'location': format_site_location(site),
@@ -433,6 +435,7 @@ def build_site_profile(site):
         'data_gap_notes': site.get('data_gap_notes', ''),
         'data_quality_flags': site.get('data_quality_flags', []),
         'needs_confirmation': bool(site.get('needs_confirmation')),
+        'research_readiness': research_readiness,
     }
 
 

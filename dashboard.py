@@ -43,6 +43,7 @@ from modules.review import (
     review_status_tone,
     save_review_store,
 )
+from modules.data_quality import build_research_readiness
 from modules.supply_chains import (
     build_supply_chain_catalog,
     build_supply_chain_detail,
@@ -364,6 +365,11 @@ def build_workspace_data_gaps(company, site, compatibility_score=None):
     if lane['lane_score'] < 55:
         gaps.append('Validate inbound and outbound lane assumptions against site rail, transload, highway, and port access.')
 
+    readiness = build_research_readiness(site, company=company, compatibility_score=pair_score)
+    for task in readiness.get('tasks', []):
+        if task not in gaps:
+            gaps.append(task)
+
     if not gaps:
         gaps.append('Confirm acreage, rail service details, utility readiness, and company timing before outreach.')
 
@@ -400,6 +406,11 @@ def build_company_site_comparison(company, sites, segments, limit=5):
     for index, match in enumerate(site_matches, start=1):
         site = match.get('site', {})
         compatibility_score = safe_score(match.get('compatibility_score', 0))
+        research_readiness = build_research_readiness(
+            site,
+            company=company,
+            compatibility_score=compatibility_score,
+        )
         compared_sites.append({
             'rank': index,
             'site': build_site_profile(site),
@@ -408,6 +419,8 @@ def build_company_site_comparison(company, sites, segments, limit=5):
             'lane_score': safe_score(match.get('lane_score', 0)),
             'lane_readiness_label': match.get('lane_readiness_label', ''),
             'lane_reasons': match.get('lane_reasons', []),
+            'research_readiness': research_readiness,
+            'verification_tasks': research_readiness.get('tasks', []),
             'matching_reasons': get_site_recommendation_explanation(company, site),
             'risks_or_confirmation_items': build_workspace_data_gaps(
                 company,
@@ -424,6 +437,7 @@ def build_company_site_comparison(company, sites, segments, limit=5):
             'compatibility_score': first_choice['compatibility_score'],
             'lane_score': first_choice['lane_score'],
             'lane_readiness_label': first_choice['lane_readiness_label'],
+            'research_readiness_label': first_choice['research_readiness']['label'],
             'why': first_choice['matching_reasons'][:3],
         }
 
@@ -455,6 +469,11 @@ def build_opportunity_workspace(company, site, segments):
     segment_data = find_segment_for_company(segments, company)
     compatibility_score = safe_score(calculate_site_compatibility_score(company, site))
     lane = calculate_lane_score(company, site)
+    research_readiness = build_research_readiness(
+        site,
+        company=company,
+        compatibility_score=compatibility_score,
+    )
     company_copy = company.copy()
     company_copy['best_recommended_site'] = site.get('site_name', '')
     company_copy['best_site_name'] = site.get('site_name', '')
@@ -485,6 +504,8 @@ def build_opportunity_workspace(company, site, segments):
             'matching_reasons': get_site_recommendation_explanation(company, site),
         },
         'lane': lane,
+        'research_readiness': research_readiness,
+        'verification_tasks': research_readiness.get('tasks', []),
         'company_context': format_company_context(company, segment_data),
         'risks_or_data_gaps': build_workspace_data_gaps(company, site, compatibility_score=compatibility_score),
         'talking_points': build_workspace_talking_points(company, site, segment_data),
@@ -524,7 +545,10 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
         'target_industries',
         'lane_score',
         'lane_readiness_label',
+        'research_readiness_label',
+        'research_readiness_score',
         'lane_reasons',
+        'verification_tasks',
         'matching_reasons',
         'risks_or_confirmation_items',
     ]
@@ -547,7 +571,10 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
                 'target_industries': site.get('target_industries', ''),
                 'lane_score': compared_site.get('lane_score', ''),
                 'lane_readiness_label': compared_site.get('lane_readiness_label', ''),
+                'research_readiness_label': compared_site.get('research_readiness', {}).get('label', ''),
+                'research_readiness_score': compared_site.get('research_readiness', {}).get('score', ''),
                 'lane_reasons': '; '.join(compared_site.get('lane_reasons', [])),
+                'verification_tasks': '; '.join(compared_site.get('verification_tasks', [])),
                 'matching_reasons': '; '.join(compared_site.get('matching_reasons', [])),
                 'risks_or_confirmation_items': '; '.join(compared_site.get('risks_or_confirmation_items', [])),
             })

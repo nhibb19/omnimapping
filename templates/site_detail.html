@@ -8,6 +8,7 @@
     <p class="summary-note">{{ report.site_profile.location }} | {{ report.site_profile.acres or 'Unknown' }} acres</p>
     <div class="status-line">
       <span class="pill {{ report.site_profile.review_status_tone }}">{{ report.site_profile.review_status_label }}</span>
+      <span class="pill {{ report.site_profile.research_readiness.tone }}">{{ report.site_profile.research_readiness.label }}</span>
       {% if report.site_profile.needs_confirmation %}
         <span class="pill review">Needs confirmation</span>
       {% else %}
@@ -26,6 +27,7 @@
   <div class="scan-item {{ yes_no_tone(report.site_profile.rail_served) }}"><span class="muted">Rail</span><strong>{{ report.site_profile.rail_served or 'Confirm' }}</strong></div>
   <div class="scan-item {{ confidence_tone(report.site_profile.source_confidence) }}"><span class="muted">Confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong></div>
   <div class="scan-item {{ report.site_profile.review_status_tone }}"><span class="muted">Review</span><strong>{{ report.site_profile.review_status_label }}</strong></div>
+  <div class="scan-item {{ report.site_profile.research_readiness.tone }}"><span class="muted">Research</span><strong>{{ report.site_profile.research_readiness.score }}/100</strong></div>
   <div class="scan-item info"><span class="muted">Matched companies</span><strong>{{ report.top_matched_companies|length }}</strong></div>
 </section>
 
@@ -53,6 +55,9 @@
       {% else %}
         <div class="gap-note neutral"><strong>Data quality flags:</strong> No specific flags generated from the current site data.</div>
       {% endif %}
+      <div class="gap-note {{ report.site_profile.research_readiness.tone }}">
+        <strong>Research readiness:</strong> {{ report.site_profile.research_readiness.label }} with {{ report.site_profile.research_readiness.confirmed_count }} of {{ report.site_profile.research_readiness.total_count }} checklist items confirmed.
+      </div>
     </div>
     <form class="review-form" method="post" action="{{ url_for('update_site_review', site_name=report.site_profile.site_name) }}">
       <div>
@@ -98,6 +103,7 @@
     <div class="metric"><span class="muted">Source confidence</span><strong>{{ report.site_profile.source_confidence or 'Unspecified' }}</strong><span class="pill {{ confidence_tone(report.site_profile.source_confidence) }}">Confidence</span></div>
     <div class="metric"><span class="muted">Last verified</span><strong>{{ report.site_profile.last_verified or 'Unknown' }}</strong></div>
     <div class="metric"><span class="muted">Raw confirmation</span><strong>{{ 'Needs confirmation' if report.site_profile.needs_confirmation else 'Current' }}</strong></div>
+    <div class="metric"><span class="muted">Research readiness</span><strong>{{ report.site_profile.research_readiness.label }}</strong><span class="pill {{ report.site_profile.research_readiness.tone }}">{{ report.site_profile.research_readiness.score }}/100</span></div>
   </div>
   {% if report.site_profile.source_url %}
     <p><strong>Source:</strong> <a href="{{ report.site_profile.source_url }}">{{ report.site_profile.source_url }}</a></p>
@@ -105,6 +111,26 @@
   <p><strong>Data gaps:</strong> {{ report.site_profile.data_gap_notes or 'No specific gap notes recorded.' }}</p>
   {% if report.site_profile.data_quality_flags %}
     <div class="gap-note"><strong>Confirm before outreach:</strong> {{ report.site_profile.data_quality_flags | join(', ') }}.</div>
+  {% endif %}
+</section>
+
+<section class="section">
+  <h2>Research Checklist</h2>
+  <div class="breakdown">
+    {% for item in report.site_profile.research_readiness.checklist %}
+      <div class="breakdown-row">
+        <span>{{ item.label }}</span>
+        <strong>{{ item.status }}</strong>
+      </div>
+    {% endfor %}
+  </div>
+  {% if report.site_profile.research_readiness.tasks %}
+    <h3>Verification Tasks</h3>
+    <ul class="clean">
+      {% for task in report.site_profile.research_readiness.tasks %}
+        <li>{{ task }}</li>
+      {% endfor %}
+    </ul>
   {% endif %}
 </section>
 
