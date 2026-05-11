@@ -4,6 +4,8 @@ import json
 import os
 from datetime import datetime
 
+from .data_quality import build_research_readiness
+
 
 REVIEW_STATUSES = ("needs_review", "in_review", "confirmed", "blocked")
 
@@ -115,6 +117,7 @@ def merge_review_record(site, review_store):
     merged["review_status_label"] = review_status_label(status)
     merged["review_status_tone"] = review_status_tone(status)
     merged["ready_for_outreach"] = status == "confirmed"
+    merged["research_readiness"] = build_research_readiness(merged)
     return merged
 
 

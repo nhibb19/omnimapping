@@ -26,6 +26,7 @@
   </div>
   {% if comparison.recommended_first_choice %}
     <p><strong>Recommended first-choice site:</strong> {{ comparison.recommended_first_choice.site_name }} at {{ comparison.recommended_first_choice.compatibility_score }}/100 compatibility and {{ comparison.recommended_first_choice.lane_score }}/100 lane readiness.</p>
+    <p><strong>Research readiness:</strong> {{ comparison.recommended_first_choice.research_readiness_label }}.</p>
     <ul class="clean">
       {% for reason in comparison.recommended_first_choice.why %}
         <li>{{ reason }}</li>
@@ -55,6 +56,7 @@
           <th>Site</th>
           <th>Compatibility</th>
           <th>Lane</th>
+          <th>Research</th>
           <th>Location</th>
           <th>Acres</th>
           <th>Rail</th>
@@ -78,6 +80,10 @@
             <td>
               <span class="mobile-label">Lane</span>
               <span class="score-chip {{ score_tone(compared_site.lane_score) }}"><strong>{{ compared_site.lane_score }}</strong><span>{{ compared_site.lane_readiness_label }}</span></span>
+            </td>
+            <td>
+              <span class="mobile-label">Research</span>
+              <span class="score-chip {{ compared_site.research_readiness.tone }}"><strong>{{ compared_site.research_readiness.score }}</strong><span>{{ compared_site.research_readiness.label }}</span></span>
             </td>
             <td><span class="mobile-label">Location</span>{{ site.location }}</td>
             <td><span class="mobile-label">Acres</span>{{ site.acres or 'Confirm' }}</td>
@@ -103,6 +109,11 @@
               <ul class="clean">
                 {% for item in compared_site.risks_or_confirmation_items[:3] %}
                   <li>{{ item }}</li>
+                {% endfor %}
+                {% for task in compared_site.verification_tasks[:2] %}
+                  {% if task not in compared_site.risks_or_confirmation_items[:3] %}
+                    <li>{{ task }}</li>
+                  {% endif %}
                 {% endfor %}
               </ul>
             </td>

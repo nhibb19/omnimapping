@@ -22,6 +22,7 @@
     <div class="metric"><span class="muted">Priority score</span><strong>{{ workspace.priority.score }}/100</strong><span class="pill {{ score_tone(workspace.priority.score) }}">{{ priority_label(workspace.priority.score) }}</span></div>
     <div class="metric"><span class="muted">Compatibility</span><strong>{{ workspace.site_match.compatibility_score }}/100</strong><span class="pill {{ score_tone(workspace.site_match.compatibility_score) }}">{{ match_label(workspace.site_match.compatibility_score) }}</span></div>
     <div class="metric"><span class="muted">Lane readiness</span><strong>{{ workspace.lane.lane_score }}/100</strong><span class="pill {{ score_tone(workspace.lane.lane_score) }}">{{ workspace.lane.lane_readiness_label }}</span></div>
+    <div class="metric"><span class="muted">Research readiness</span><strong>{{ workspace.research_readiness.score }}/100</strong><span class="pill {{ workspace.research_readiness.tone }}">{{ workspace.research_readiness.label }}</span></div>
     <div class="metric"><span class="muted">State pair</span><strong>{{ workspace.company.state }} to {{ workspace.site.state }}</strong></div>
   </div>
 </section>
@@ -57,6 +58,18 @@
           <li>{{ reason }}</li>
         {% endfor %}
       </ul>
+    </section>
+
+    <section class="section">
+      <h2>Research Checklist</h2>
+      <div class="breakdown">
+        {% for item in workspace.research_readiness.checklist %}
+          <div class="breakdown-row">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.status }}</strong>
+          </div>
+        {% endfor %}
+      </div>
     </section>
 
     <section class="section">
@@ -97,6 +110,19 @@
           <li>{{ gap }}</li>
         {% endfor %}
       </ul>
+    </section>
+
+    <section class="section">
+      <h2>Verification Tasks</h2>
+      {% if workspace.verification_tasks %}
+        <ul class="clean">
+          {% for task in workspace.verification_tasks %}
+            <li>{{ task }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>Research checklist is current for outreach prep.</p>
+      {% endif %}
     </section>
   </aside>
 </div>

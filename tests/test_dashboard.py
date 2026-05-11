@@ -15,6 +15,7 @@ from dashboard import (
     build_company_site_comparison,
     build_company_scan_summary,
     build_opportunity_workspace,
+    build_opportunity_map,
     build_site_scan_summary,
     build_supply_chain_filter_options,
     build_supply_chain_scan_summary,
@@ -25,6 +26,7 @@ from dashboard import (
     parse_min_score,
     unique_sorted,
 )
+from modules.data_quality import build_research_readiness
 from modules.export import build_site_directory
 from modules.review import (
     build_review_update,
@@ -208,6 +210,52 @@ class TestOmniMappingDashboard(unittest.TestCase):
         summary = build_company_scan_summary(filtered)
         self.assertEqual(summary['ready_for_outreach'], 1)
 
+    def test_opportunity_map_payload_derives_nodes_and_filters(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        with self.app.test_request_context('/map?state=TX&node_type=company&node_type=site'):
+            map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': 'TX',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': 1,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        labels = {marker['label'] for marker in map_data['markers']}
+        self.assertIn('Acme Chemicals', labels)
+        self.assertIn('Houston Rail Park', labels)
+        self.assertNotIn('Front Range Logistics', labels)
+        self.assertTrue(all(marker['type'] in {'company', 'site'} for marker in map_data['markers']))
+        self.assertTrue(all('lat' in marker and 'lon' in marker for marker in map_data['markers']))
+        self.assertEqual(map_data['summary']['companies'], 1)
+
+    def test_opportunity_map_route_shows_filters_markers_and_workflow_links(self):
+        response = self.client.get('/map?state=TX&segment=Chemicals&commodity=chemicals&min_score=1')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Opportunity Map', body)
+        self.assertIn('Acme Chemicals', body)
+        self.assertIn('Houston Rail Park', body)
+        self.assertIn('Houston Hub', body)
+        self.assertIn('Supply chain', body)
+        self.assertIn('Min site fit', body)
+        self.assertIn('Rail / transload', body)
+        self.assertIn('/companies/Acme%20Chemicals/site-comparison', body)
+        self.assertIn('/workspace?company=Acme+Chemicals', body)
+        self.assertIn('site=Houston+Rail+Park', body)
+
     def test_company_detail_page_shows_priority_site_and_next_action(self):
         response = self.client.get('/companies/Acme%20Chemicals')
 
@@ -241,6 +289,10 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Save Review', detail_body)
         self.assertIn('Confirmed', detail_body)
         self.assertIn('Data Confidence', detail_body)
+        self.assertIn('Research Checklist', detail_body)
+        self.assertIn('Research readiness', detail_body)
+        self.assertIn('Verification Tasks', detail_body)
+        self.assertIn('Source URL present', detail_body)
         self.assertIn('Source confidence', detail_body)
         self.assertIn('Last verified', detail_body)
         self.assertIn('Data gaps', detail_body)
@@ -277,6 +329,23 @@ class TestOmniMappingDashboard(unittest.TestCase):
         summary = build_site_scan_summary(directory)
         self.assertEqual(summary['needs_confirmation'], 1)
         self.assertEqual(summary['review_queue'], 1)
+
+    def test_research_readiness_builds_tasks_from_existing_site_fields(self):
+        _, companies, sites, _ = self.loaded_data
+        readiness = build_research_readiness(
+            sites[0],
+            company=companies[0],
+            compatibility_score=85,
+        )
+
+        self.assertEqual(readiness['label'], 'Needs Verification')
+        self.assertGreater(readiness['score'], 0)
+        self.assertIn('Add a current public source URL or internal source trail.', readiness['tasks'])
+        self.assertIn('Assign source_confidence as High, Medium, or another explicit confidence level.', readiness['tasks'])
+        self.assertTrue(any(
+            item['label'] == 'Acreage confirmed' and item['confirmed']
+            for item in readiness['checklist']
+        ))
 
     def test_default_review_status_derives_from_confirmation_flag(self):
         _, _, sites, _ = self.loaded_data
@@ -369,6 +438,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertGreaterEqual(len(workspace['priority']['reasons']), 1)
         self.assertGreater(workspace['site_match']['compatibility_score'], 0)
         self.assertIn('lane', workspace)
+        self.assertIn('research_readiness', workspace)
+        self.assertIn('verification_tasks', workspace)
         self.assertGreater(workspace['lane']['lane_score'], 0)
         self.assertGreaterEqual(len(workspace['lane']['lane_reasons']), 1)
         self.assertGreaterEqual(len(workspace['site_match']['matching_reasons']), 1)
@@ -390,6 +461,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(comparison['recommended_first_choice']['site_name'], 'Houston Rail Park')
         self.assertGreater(comparison['recommended_first_choice']['lane_score'], 0)
         self.assertIn('lane_readiness_label', comparison['recommended_first_choice'])
+        self.assertIn('research_readiness_label', comparison['recommended_first_choice'])
+        self.assertIn('research_readiness', comparison['compared_sites'][0])
+        self.assertIn('verification_tasks', comparison['compared_sites'][0])
         self.assertIn('lane_reasons', comparison['compared_sites'][0])
         self.assertGreaterEqual(len(comparison['recommended_first_choice']['why']), 1)
         self.assertGreaterEqual(len(comparison['compared_sites'][0]['risks_or_confirmation_items']), 1)
@@ -405,6 +479,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Denver Industrial Yard', body)
         self.assertIn('Target Industries', body)
         self.assertIn('Lane', body)
+        self.assertIn('Research', body)
+        self.assertIn('Research readiness', body)
         self.assertIn('Strong lane', body)
         self.assertIn('Risks / Confirm', body)
         self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
@@ -548,6 +624,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Houston Rail Park', body)
         self.assertIn('Why This Pair Fits', body)
         self.assertIn('Lane Readiness', body)
+        self.assertIn('Research Checklist', body)
+        self.assertIn('Research readiness', body)
+        self.assertIn('Verification Tasks', body)
         self.assertIn('Strong lane', body)
         self.assertIn('Talking Points', body)
         self.assertIn('Risks And Data Gaps', body)
@@ -600,6 +679,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
             self.assertIn('recommended_first_choice', responses[0].get_data(as_text=True))
             csv_body = responses[1].get_data(as_text=True)
             self.assertIn('lane_score', csv_body)
+            self.assertIn('research_readiness_label', csv_body)
+            self.assertIn('verification_tasks', csv_body)
             self.assertIn('Houston Rail Park', csv_body)
             self.assertIn('Denver Industrial Yard', csv_body)
         finally:
