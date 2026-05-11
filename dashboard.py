@@ -249,6 +249,8 @@ def build_supply_chain_scan_summary(chains):
         'company_matches': sum(chain.get('count', 0) for chain in chains),
         'strong_prospects': sum(chain.get('strong_count', 0) for chain in chains),
         'rail_possible': sum(chain.get('possible_count', 0) for chain in chains),
+        'ready_for_outreach': sum(chain.get('ready_count', 0) for chain in chains),
+        'needs_site_review': sum(chain.get('site_review_count', 0) for chain in chains),
     }
 
 
@@ -256,6 +258,15 @@ def build_supply_chain_filter_options(chains):
     """Build select-list values from configured supply-chain groups."""
     return {
         'groups': unique_sorted(chain.get('group') for chain in chains),
+        'opportunities': ['Strong rail prospect', 'Rail-service possible', 'Monitor'],
+        'readinesses': ['Ready for outreach', 'Qualify fit', 'Needs site review', 'Monitor'],
+        'sorts': [
+            {'value': 'strong', 'label': 'Strong rail prospects'},
+            {'value': 'ready', 'label': 'Ready for outreach'},
+            {'value': 'priority', 'label': 'Average priority'},
+            {'value': 'site_fit', 'label': 'Average site fit'},
+            {'value': 'matches', 'label': 'Company matches'},
+        ],
     }
 
 
@@ -682,11 +693,19 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
         filters = {
             'group': str(request.args.get('group', '')).strip(),
             'query': str(request.args.get('q', '')).strip(),
+            'min_priority': parse_min_score(request.args.get('min_priority')),
+            'opportunity': str(request.args.get('opportunity', '')).strip(),
+            'readiness': str(request.args.get('readiness', '')).strip(),
+            'sort': str(request.args.get('sort', 'strong')).strip() or 'strong',
         }
         visible_chains = filter_supply_chains(
             all_chains,
             group=filters['group'] or None,
             query=filters['query'] or None,
+            min_priority=filters['min_priority'],
+            opportunity=filters['opportunity'] or None,
+            readiness=filters['readiness'] or None,
+            sort=filters['sort'],
         )
 
         return render_template(

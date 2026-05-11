@@ -222,16 +222,43 @@ def rail_opportunity(company):
     return {"label": "Monitor", "tone": "neutral"}
 
 
+def readiness_status(company):
+    """Classify how ready a matched company is for follow-up."""
+    priority_score = safe_int(company.get("priority_score"), 0)
+    site_match_score = safe_int(company.get("best_site_match_score"), 0)
+    best_site = company.get("best_site_name") or company.get("best_recommended_site")
+
+    if priority_score >= 70 and site_match_score >= 60 and best_site:
+        return {"label": "Ready for outreach", "tone": "positive", "rank": 3}
+    if not best_site:
+        return {"label": "Needs site review", "tone": "warning", "rank": 1}
+    if priority_score >= 60 or site_match_score >= 50:
+        return {"label": "Qualify fit", "tone": "review", "rank": 2}
+    return {"label": "Monitor", "tone": "neutral", "rank": 0}
+
+
 def summarize_companies(companies):
     """Return operational counts for a matched company set."""
     strong = [company for company in companies if rail_opportunity(company)["label"] == "Strong rail prospect"]
     possible = [company for company in companies if rail_opportunity(company)["label"] == "Rail-service possible"]
+    ready = [company for company in companies if readiness_status(company)["label"] == "Ready for outreach"]
+    site_review = [company for company in companies if readiness_status(company)["label"] == "Needs site review"]
+    qualify = [company for company in companies if readiness_status(company)["label"] == "Qualify fit"]
     return {
         "count": len(companies),
         "strong_count": len(strong),
         "possible_count": len(possible),
+        "monitor_count": max(0, len(companies) - len(strong) - len(possible)),
+        "ready_count": len(ready),
+        "site_review_count": len(site_review),
+        "qualify_count": len(qualify),
+        "readiness_monitor_count": max(0, len(companies) - len(ready) - len(site_review) - len(qualify)),
         "average_priority": round(
             sum(safe_int(company.get("priority_score"), 0) for company in companies) / len(companies),
+            1,
+        ) if companies else 0,
+        "average_site_fit": round(
+            sum(safe_int(company.get("best_site_match_score"), 0) for company in companies) / len(companies),
             1,
         ) if companies else 0,
     }
@@ -240,6 +267,8 @@ def summarize_companies(companies):
 def matched_company_payload(company):
     """Build a compact company payload for supply-chain templates."""
     opportunity = rail_opportunity(company)
+    readiness = readiness_status(company)
+    best_site_name = company.get("best_site_name") or company.get("best_recommended_site", "")
     return {
         "company": company.get("company", ""),
         "segment": company.get("segment", ""),
@@ -247,11 +276,28 @@ def matched_company_payload(company):
         "location": ", ".join(part for part in [company.get("city", ""), company.get("state", "")] if part),
         "priority_score": safe_int(company.get("priority_score"), 0),
         "rail_fit_score": safe_int(company.get("rail_fit_score"), 0),
-        "best_site_name": company.get("best_site_name") or company.get("best_recommended_site", ""),
+        "best_site_name": best_site_name,
         "best_site_match_score": safe_int(company.get("best_site_match_score"), 0),
         "opportunity_label": opportunity["label"],
         "opportunity_tone": opportunity["tone"],
+        "readiness_label": readiness["label"],
+        "readiness_tone": readiness["tone"],
+        "readiness_rank": readiness["rank"],
+        "recommended_action": recommended_company_action(company, best_site_name, readiness["label"]),
     }
+
+
+def recommended_company_action(company, best_site_name=None, readiness_label=None):
+    """Return the next practical dashboard action for a matched company."""
+    best_site_name = best_site_name or company.get("best_site_name") or company.get("best_recommended_site", "")
+    readiness_label = readiness_label or readiness_status(company)["label"]
+    if readiness_label == "Ready for outreach" and best_site_name:
+        return "Open opportunity workspace and confirm outreach timing."
+    if readiness_label == "Needs site review":
+        return "Compare industrial sites and choose a first-choice location."
+    if readiness_label == "Qualify fit":
+        return "Validate material volumes, lane fit, and site requirements."
+    return "Monitor as a market category and revisit when project signals improve."
 
 
 def match_companies_for_definition(definition, companies):
@@ -301,6 +347,7 @@ def build_supply_chain_detail(slug, companies):
         **definition,
         **summarize_companies(matched_companies),
         "companies": [matched_company_payload(company) for company in matched_companies],
+        "action_queue": build_supply_chain_action_queue(matched_companies),
         "steps": [],
     }
 
@@ -321,11 +368,45 @@ def build_supply_chain_detail(slug, companies):
     return chain_payload
 
 
-def filter_supply_chains(chains, group=None, query=None):
+def build_supply_chain_action_queue(companies, limit=8):
+    """Build prioritized next actions for a supply-chain detail page."""
+    sorted_companies = sorted(
+        companies,
+        key=lambda company: (
+            readiness_status(company)["rank"],
+            safe_int(company.get("priority_score"), 0),
+            safe_int(company.get("best_site_match_score"), 0),
+            safe_int(company.get("rail_fit_score"), 0),
+        ),
+        reverse=True,
+    )
+    return [matched_company_payload(company) for company in sorted_companies[:limit]]
+
+
+def filter_supply_chains(chains, group=None, query=None, min_priority=None, opportunity=None, readiness=None, sort=None):
     """Filter supply-chain overview cards by group and search text."""
     filtered = list(chains)
     if group:
         filtered = [chain for chain in filtered if chain.get("group") == group]
+    if min_priority is not None:
+        filtered = [chain for chain in filtered if safe_int(chain.get("average_priority"), 0) >= min_priority]
+    if opportunity:
+        opportunity_counts = {
+            "Strong rail prospect": "strong_count",
+            "Rail-service possible": "possible_count",
+            "Monitor": "monitor_count",
+        }
+        count_key = opportunity_counts.get(opportunity)
+        filtered = [chain for chain in filtered if count_key and chain.get(count_key, 0) > 0]
+    if readiness:
+        readiness_counts = {
+            "Ready for outreach": "ready_count",
+            "Qualify fit": "qualify_count",
+            "Needs site review": "site_review_count",
+            "Monitor": "readiness_monitor_count",
+        }
+        count_key = readiness_counts.get(readiness)
+        filtered = [chain for chain in filtered if count_key and chain.get(count_key, 0) > 0]
     if query:
         query_text = normalize_text(query)
         filtered = [
@@ -336,8 +417,17 @@ def filter_supply_chains(chains, group=None, query=None):
                     chain.get("group", ""),
                     chain.get("summary", ""),
                     " ".join(chain.get("terms", [])),
+                    " ".join(company.get("company", "") for company in chain.get("top_companies", [])),
                 ])
             )
         ]
-    return filtered
-
+    sort_key = sort or "strong"
+    if sort_key == "priority":
+        return sorted(filtered, key=lambda chain: safe_int(chain.get("average_priority"), 0), reverse=True)
+    if sort_key == "site_fit":
+        return sorted(filtered, key=lambda chain: safe_int(chain.get("average_site_fit"), 0), reverse=True)
+    if sort_key == "ready":
+        return sorted(filtered, key=lambda chain: chain.get("ready_count", 0), reverse=True)
+    if sort_key == "matches":
+        return sorted(filtered, key=lambda chain: chain.get("count", 0), reverse=True)
+    return sorted(filtered, key=lambda chain: chain.get("strong_count", 0), reverse=True)

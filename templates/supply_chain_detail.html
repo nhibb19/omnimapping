@@ -18,6 +18,51 @@
   <div class="scan-item positive"><span class="muted">Strong rail prospects</span><strong>{{ chain.strong_count }}</strong></div>
   <div class="scan-item review"><span class="muted">Rail-service possible</span><strong>{{ chain.possible_count }}</strong></div>
   <div class="scan-item info"><span class="muted">Average priority</span><strong>{{ chain.average_priority }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Ready for outreach</span><strong>{{ chain.ready_count }}</strong></div>
+  <div class="scan-item warning"><span class="muted">Needs site review</span><strong>{{ chain.site_review_count }}</strong></div>
+  <div class="scan-item info"><span class="muted">Average site fit</span><strong>{{ chain.average_site_fit }}</strong></div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <div>
+      <h2>Action Queue</h2>
+      <p class="summary-note">Prioritized companies from this supply chain, ordered by outreach readiness, priority, site fit, and rail fit.</p>
+    </div>
+  </div>
+  {% if chain.action_queue %}
+    <div class="action-queue">
+      {% for company in chain.action_queue %}
+        <article class="queue-item">
+          <div class="queue-main">
+            <div>
+              <h3><a href="{{ url_for('company_detail', company_name=company.company) }}">{{ company.company }}</a></h3>
+              <span class="subtle">{{ company.segment }} | {{ company.commodity }} | {{ company.location }}</span>
+            </div>
+            <div class="pill-row">
+              <span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span>
+              <span class="pill {{ company.opportunity_tone }}">{{ company.opportunity_label }}</span>
+            </div>
+          </div>
+          <div class="queue-metrics">
+            <span><strong>{{ company.priority_score }}</strong> Priority</span>
+            <span><strong>{{ company.rail_fit_score }}/5</strong> Rail fit</span>
+            <span><strong>{{ company.best_site_match_score }}</strong> Site fit</span>
+          </div>
+          <div class="opportunity-note">{{ company.recommended_action }}</div>
+          <div class="actions status-line">
+            <a class="button primary small" href="{{ url_for('company_detail', company_name=company.company) }}">Review Company</a>
+            <a class="button secondary small" href="{{ url_for('company_site_comparison', company_name=company.company) }}">Compare Sites</a>
+            {% if company.best_site_name %}
+              <a class="button small" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">Open Workspace</a>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">No companies are queued for this supply chain yet.</div>
+  {% endif %}
 </section>
 
 <section class="section">
@@ -54,6 +99,7 @@
               </div>
               <div class="pill-row status-line">
                 <span class="pill {{ company.opportunity_tone }}">{{ company.opportunity_label }}</span>
+                <span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span>
                 <span class="pill neutral">Rail fit {{ company.rail_fit_score }}/5</span>
                 {% if company.best_site_name %}
                   <a class="pill review" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">{{ company.best_site_match_score }}/100 site fit</a>
@@ -88,6 +134,7 @@
           <th>Segment</th>
           <th>Commodity</th>
           <th>Rail Opportunity</th>
+          <th>Readiness</th>
           <th>Priority</th>
           <th>Best Site</th>
           <th>Actions</th>
@@ -100,6 +147,7 @@
             <td><span class="mobile-label">Segment</span>{{ company.segment }}</td>
             <td><span class="mobile-label">Commodity</span>{{ company.commodity }}</td>
             <td><span class="mobile-label">Rail Opportunity</span><span class="pill {{ company.opportunity_tone }}">{{ company.opportunity_label }}</span></td>
+            <td><span class="mobile-label">Readiness</span><span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span></td>
             <td><span class="mobile-label">Priority</span><span class="score-chip {{ score_tone(company.priority_score) }}"><strong>{{ company.priority_score }}</strong><span>{{ priority_label(company.priority_score) }}</span></span></td>
             <td>
               <span class="mobile-label">Best Site</span>

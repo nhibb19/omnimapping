@@ -445,18 +445,32 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(chemicals['count'], 1)
         self.assertEqual(chemicals['top_companies'][0]['company'], 'Acme Chemicals')
         self.assertEqual(chemicals['top_companies'][0]['opportunity_label'], 'Strong rail prospect')
+        self.assertEqual(chemicals['top_companies'][0]['readiness_label'], 'Ready for outreach')
+        self.assertEqual(chemicals['ready_count'], 1)
+        self.assertEqual(chemicals['site_review_count'], 0)
         self.assertEqual(warehousing['top_companies'][0]['company'], 'Front Range Logistics')
 
-        filtered = filter_supply_chains(catalog, group='Chemicals', query='resin')
-        self.assertEqual([chain['slug'] for chain in filtered], ['plastics-resins'])
+        filtered = filter_supply_chains(
+            catalog,
+            group='Chemicals',
+            query='industrial gases',
+            opportunity='Strong rail prospect',
+            readiness='Ready for outreach',
+            min_priority=1,
+            sort='ready',
+        )
+        self.assertEqual([chain['slug'] for chain in filtered], ['chemicals'])
 
         summary = build_supply_chain_scan_summary([chemicals, warehousing])
         self.assertEqual(summary['chain_count'], 2)
         self.assertEqual(summary['company_matches'], 2)
         self.assertEqual(summary['strong_prospects'], 1)
+        self.assertEqual(summary['ready_for_outreach'], 1)
 
         options = build_supply_chain_filter_options(catalog)
         self.assertIn('Chemicals', options['groups'])
+        self.assertIn('Ready for outreach', options['readinesses'])
+        self.assertIn({'value': 'ready', 'label': 'Ready for outreach'}, options['sorts'])
 
     def test_supply_chain_detail_assigns_step_company_matches(self):
         _, companies, _, _ = self.loaded_data
@@ -465,6 +479,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(detail['name'], 'Chemicals')
         self.assertEqual(detail['companies'][0]['company'], 'Acme Chemicals')
         self.assertEqual(len(detail['steps']), 4)
+        self.assertEqual(detail['action_queue'][0]['company'], 'Acme Chemicals')
+        self.assertIn('Open opportunity workspace', detail['action_queue'][0]['recommended_action'])
         self.assertTrue(any(
             company['company'] == 'Acme Chemicals'
             for step in detail['steps']
@@ -483,9 +499,12 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Food / Cold Storage', catalog_body)
         self.assertIn('/supply-chains/chemicals', catalog_body)
         self.assertIn('Strong rail prospects', catalog_body)
+        self.assertIn('Ready for outreach', catalog_body)
+        self.assertIn('Needs site review', catalog_body)
 
         self.assertEqual(detail_response.status_code, 200)
         detail_body = detail_response.get_data(as_text=True)
+        self.assertIn('Action Queue', detail_body)
         self.assertIn('Visual Flow', detail_body)
         self.assertIn('Upstream inputs', detail_body)
         self.assertIn('Processing', detail_body)
@@ -493,18 +512,21 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Downstream customers', detail_body)
         self.assertIn('Rail-service possible', detail_body)
         self.assertIn('Strong rail prospect', detail_body)
+        self.assertIn('Ready for outreach', detail_body)
+        self.assertIn('Open opportunity workspace', detail_body)
         self.assertIn('Acme Chemicals', detail_body)
         self.assertIn('/companies/Acme%20Chemicals', detail_body)
         self.assertIn('/companies/Acme%20Chemicals/site-comparison', detail_body)
         self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', detail_body)
 
-    def test_supply_chains_route_filters_group_and_search(self):
-        response = self.client.get('/supply-chains?group=Chemicals&q=resin')
+    def test_supply_chains_route_filters_group_search_readiness_and_sort(self):
+        response = self.client.get('/supply-chains?group=Chemicals&q=industrial%20gases&opportunity=Strong%20rail%20prospect&readiness=Ready%20for%20outreach&min_priority=1&sort=ready')
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn('Plastics / Resins', body)
+        self.assertIn('Chemicals</a>', body)
         self.assertNotIn('Steel</a>', body)
+        self.assertIn('value="ready" selected', body)
 
     def test_opportunity_workspace_page_shows_action_context(self):
         response = self.client.get('/workspace?company=Acme%20Chemicals&site=Houston%20Rail%20Park')
