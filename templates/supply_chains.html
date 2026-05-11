@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Supply Chains - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-kicker">Rail Opportunity Flows</div>
+    <h1>Supply Chains</h1>
+    <p class="summary-note">{{ filtered_count }} of {{ total_count }} supply chains shown. Each card links company targets to upstream inputs, processing steps, logistics nodes, and rail-service opportunity points.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('companies') }}">Ranked Companies</a>
+    <a class="button" href="{{ url_for('sites') }}">Industrial Sites</a>
+  </div>
+</div>
+
+<section class="filters">
+  <form class="grid" method="get" action="{{ url_for('supply_chains') }}">
+    <div>
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" placeholder="Steel, cold storage, resin, logistics" value="{{ filters.query or '' }}">
+    </div>
+    <div>
+      <label for="group">Group</label>
+      <select id="group" name="group">
+        <option value="">All groups</option>
+        {% for group in filter_options.groups %}
+          <option value="{{ group }}" {% if filters.group == group %}selected{% endif %}>{{ group }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="opportunity">Rail Fit</label>
+      <select id="opportunity" name="opportunity">
+        <option value="">Any fit</option>
+        {% for opportunity in filter_options.opportunities %}
+          <option value="{{ opportunity }}" {% if filters.opportunity == opportunity %}selected{% endif %}>{{ opportunity }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="readiness">Readiness</label>
+      <select id="readiness" name="readiness">
+        <option value="">Any status</option>
+        {% for readiness in filter_options.readinesses %}
+          <option value="{{ readiness }}" {% if filters.readiness == readiness %}selected{% endif %}>{{ readiness }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="min_priority">Min Avg Priority</label>
+      <input id="min_priority" name="min_priority" type="number" min="0" max="100" placeholder="0-100" value="{{ filters.min_priority if filters.min_priority is not none else '' }}">
+    </div>
+    <div>
+      <label for="sort">Sort</label>
+      <select id="sort" name="sort">
+        {% for sort in filter_options.sorts %}
+          <option value="{{ sort.value }}" {% if filters.sort == sort.value %}selected{% endif %}>{{ sort.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="button primary" type="submit">Apply Filters</button>
+      <a class="button" href="{{ url_for('supply_chains') }}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="scan-strip" aria-label="Supply chain scan summary">
+  <div class="scan-item info"><span class="muted">Supply chains</span><strong>{{ scan_summary.chain_count }}</strong></div>
+  <div class="scan-item"><span class="muted">Company matches</span><strong>{{ scan_summary.company_matches }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Strong rail prospects</span><strong>{{ scan_summary.strong_prospects }}</strong></div>
+  <div class="scan-item review"><span class="muted">Rail-service possible</span><strong>{{ scan_summary.rail_possible }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_for_outreach }}</strong></div>
+  <div class="scan-item warning"><span class="muted">Needs site review</span><strong>{{ scan_summary.needs_site_review }}</strong></div>
+</section>
+
+{% if chains %}
+  <section class="chain-grid" aria-label="Supply chain catalog">
+    {% for chain in chains %}
+      <article class="chain-card">
+        <div class="chain-card-head">
+          <div>
+            <div class="page-kicker">{{ chain.group }}</div>
+            <h2><a href="{{ url_for('supply_chain_detail', slug=chain.slug) }}">{{ chain.name }}</a></h2>
+            <p class="summary-note">{{ chain.summary }}</p>
+          </div>
+          <span class="score-chip {{ score_tone(chain.average_priority) }}">
+            <strong>{{ chain.average_priority }}</strong>
+            <span>Avg priority</span>
+          </span>
+        </div>
+
+        <div class="mini-flow" aria-label="{{ chain.name }} flow preview">
+          <div class="mini-step">Inputs</div>
+          <div class="mini-step">Processing</div>
+          <div class="mini-step">Logistics</div>
+          <div class="mini-step">Customers</div>
+        </div>
+
+        <div class="pill-row">
+          <span class="pill neutral">{{ chain.count }} companies</span>
+          <span class="pill positive">{{ chain.strong_count }} strong rail</span>
+          <span class="pill review">{{ chain.possible_count }} possible</span>
+          <span class="pill positive">{{ chain.ready_count }} ready</span>
+          <span class="pill warning">{{ chain.site_review_count }} site review</span>
+        </div>
+
+        <div class="chain-company-list">
+          {% for company in chain.top_companies %}
+            <div class="chain-company">
+              <div>
+                <a href="{{ url_for('company_detail', company_name=company.company) }}">{{ company.company }}</a>
+                <span class="subtle">{{ company.segment }} | {{ company.location }}</span>
+              </div>
+              <div class="pill-row">
+                <span class="pill {{ company.opportunity_tone }}">{{ company.opportunity_label }}</span>
+                <span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span>
+                {% if company.best_lane_score %}
+                  <span class="pill {{ score_tone(company.best_lane_score) }}">{{ company.best_lane_readiness_label }}</span>
+                {% endif %}
+              </div>
+            </div>
+          {% else %}
+            <div class="gap-note neutral">No matched companies yet. Keep this chain as a market scan category.</div>
+          {% endfor %}
+        </div>
+
+        <div class="actions">
+          <a class="button primary small" href="{{ url_for('supply_chain_detail', slug=chain.slug) }}">Open Flow</a>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% else %}
+  <div class="empty">
+    <strong>No supply chains match the current filters.</strong>
+    <div>Try searching for a commodity, company type, or supply-chain group.</div>
+  </div>
+{% endif %}
+{% endblock %}

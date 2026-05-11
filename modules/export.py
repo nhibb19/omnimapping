@@ -17,7 +17,7 @@ EXPORT_FIELDNAMES = [
     'inbound_materials', 'outbound_products', 'why_target', 'omnitrax_outreach_angle',
     'priority_score', 'score_breakdown', 'score_reasons',
     'best_recommended_site', 'best_recommended_site_location', 'best_recommended_site_score',
-    'best_site_name',
+    'best_site_name', 'best_lane_score', 'best_lane_readiness_label',
     'site_match_quality_label', 'freight_intensity_label', 'infrastructure_dependency',
     'recommended_next_action', 'opportunity_risk',
     'latitude', 'longitude', 'nearest_major_city', 'nearest_port',
@@ -101,6 +101,8 @@ def build_company_export_row(company):
         'best_recommended_site_location': company.get('best_recommended_site_location', ''),
         'best_recommended_site_score': company.get('best_site_match_score', ''),
         'best_site_name': best_recommended_site,
+        'best_lane_score': safe_score(company.get('best_lane_score', 0)),
+        'best_lane_readiness_label': company.get('best_lane_readiness_label', ''),
         'site_match_quality_label': company.get('site_match_quality_label', ''),
         'freight_intensity_label': company.get('freight_intensity_label', ''),
         'infrastructure_dependency': company.get('infrastructure_dependency', ''),
@@ -233,7 +235,7 @@ def export_site_matching_report(companies, sites, output_dir="exports"):
         'company_state', 'company_city',
         'priority_score', 'score_breakdown', 'score_reasons',
         'best_recommended_site', 'best_recommended_site_location',
-        'recommended_site', 'site_state', 'compatibility_score',
+        'recommended_site', 'site_state', 'compatibility_score', 'lane_score', 'lane_readiness_label',
         'rail_served', 'transload_available', 'port_access',
         'matching_reasons'
     ]
@@ -267,6 +269,8 @@ def export_site_matching_report(companies, sites, output_dir="exports"):
                     'recommended_site': site.get('site_name', ''),
                     'site_state': site.get('state', ''),
                     'compatibility_score': best_match['compatibility_score'],
+                    'lane_score': best_match.get('lane_score', ''),
+                    'lane_readiness_label': best_match.get('lane_readiness_label', ''),
                     'rail_served': site.get('rail_served', ''),
                     'transload_available': site.get('transload_available', ''),
                     'port_access': site.get('port_access', ''),
@@ -441,6 +445,10 @@ def build_site_match_export(company, match):
         'site_name': site.get('site_name', ''),
         'site_location': format_site_location(site),
         'compatibility_score': safe_score(match.get('compatibility_score', 0)),
+        'pair_score': safe_score(match.get('pair_score', 0)),
+        'lane_score': safe_score(match.get('lane_score', 0)),
+        'lane_readiness_label': match.get('lane_readiness_label', ''),
+        'lane_reasons': match.get('lane_reasons', []),
         'matching_reasons': get_site_recommendation_explanation(company, site),
         'site_profile': {
             'site_name': site.get('site_name', ''),
@@ -463,10 +471,11 @@ def build_site_match_export(company, match):
 
 def build_company_match_for_site_export(company, site):
     """Serialize one company match for a focused site report."""
-    from .scoring import calculate_site_compatibility_score
+    from .scoring import calculate_lane_score, calculate_site_compatibility_score
     from .search import get_site_recommendation_explanation
 
     export_row = build_company_export_row(company)
+    lane = calculate_lane_score(company, site)
     return {
         'company': company.get('company', ''),
         'company_location': export_row['location'],
@@ -474,6 +483,9 @@ def build_company_match_for_site_export(company, site):
         'commodity': export_row['commodity'],
         'priority_score': safe_score(company.get('priority_score', 0)),
         'compatibility_score': safe_score(calculate_site_compatibility_score(company, site)),
+        'lane_score': safe_score(lane.get('lane_score', 0)),
+        'lane_readiness_label': lane.get('lane_readiness_label', ''),
+        'lane_reasons': lane.get('lane_reasons', []),
         'matching_reasons': get_site_recommendation_explanation(company, site),
         'priority_reasons': get_priority_reasons(company),
     }
@@ -493,6 +505,8 @@ def build_company_profile_basics(company):
         'commodity_type': company.get('commodity_type', ''),
         'inbound_materials': company.get('inbound_materials', ''),
         'outbound_products': company.get('outbound_products', ''),
+        'best_lane_score': safe_score(company.get('best_lane_score', 0)),
+        'best_lane_readiness_label': company.get('best_lane_readiness_label', ''),
         'why_target': company.get('why_target', ''),
         'omnitrax_outreach_angle': company.get('omnitrax_outreach_angle', ''),
     }
@@ -508,6 +522,8 @@ def build_best_site_recommendation(company, sites):
             'site_name': get_best_recommended_site_name(company),
             'site_location': company.get('best_recommended_site_location', ''),
             'site_match_score': safe_score(company.get('best_site_match_score', 0)),
+            'lane_score': safe_score(company.get('best_lane_score', 0)),
+            'lane_readiness_label': company.get('best_lane_readiness_label', ''),
             'matching_reasons': [],
             'site_profile': {},
         }
@@ -518,6 +534,10 @@ def build_best_site_recommendation(company, sites):
         'site_name': site.get('site_name', ''),
         'site_location': format_site_location(site),
         'site_match_score': safe_score(match.get('compatibility_score', 0)),
+        'pair_score': safe_score(match.get('pair_score', 0)),
+        'lane_score': safe_score(match.get('lane_score', 0)),
+        'lane_readiness_label': match.get('lane_readiness_label', ''),
+        'lane_reasons': match.get('lane_reasons', []),
         'matching_reasons': build_site_match_export(company, match).get('matching_reasons', []),
         'site_profile': build_site_profile(site),
     }
@@ -707,6 +727,8 @@ def build_company_directory(companies):
             'priority_score': safe_score(company.get('priority_score', 0)),
             'best_recommended_site': get_best_recommended_site_name(company),
             'best_site_match_score': safe_score(company.get('best_site_match_score', 0)),
+            'best_lane_score': safe_score(company.get('best_lane_score', 0)),
+            'best_lane_readiness_label': company.get('best_lane_readiness_label', ''),
         })
 
     directory.sort(

@@ -22,7 +22,7 @@ for handler in logger.handlers[:]:
     logger.removeHandler(handler)
 
 # Console handler
-console_handler = logging.StreamHandler(sys.stdout)
+console_handler = logging.StreamHandler(sys.stderr)
 console_handler.setLevel(logging.INFO)
 console_formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

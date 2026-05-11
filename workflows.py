@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 from config import DEFAULT_TOP_LIMIT
 from logger import get_logger
 from modules.data_quality import build_data_quality_report
-from modules.scoring import calculate_priority_score, calculate_site_compatibility_score
+from modules.scoring import calculate_priority_score
 from modules.search import (
     filter_by_min_score, filter_by_segment, filter_by_state, get_top_opportunities,
     search_companies, find_best_sites_for_company
@@ -143,15 +143,18 @@ def process_companies_with_scoring(segments: List[Dict], companies: List[Dict], 
         best_site_location = ''
 
         if sites:
-            scored_sites = [
-                (site, calculate_site_compatibility_score(company, site))
-                for site in sites
-            ]
-            best_site, best_match_score = max(scored_sites, key=lambda item: item[1])
+            site_matches = find_best_sites_for_company(company, sites, 1)
+            best_match = site_matches[0]
+            best_site = best_match.get('site', {})
+            best_match_score = best_match.get('compatibility_score', 0)
             best_site_name = best_site.get('site_name')
             best_site_city = best_site.get('city', '')
             best_site_state = best_site.get('state', '')
             best_site_location = f"{best_site_city}, {best_site_state}" if best_site_city and best_site_state else best_site_city or best_site_state
+            company['best_lane_score'] = best_match.get('lane_score', 0)
+            company['best_lane_readiness_label'] = best_match.get('lane_readiness_label', '')
+            company['best_lane_reasons'] = best_match.get('lane_reasons', [])
+            company['best_pair_score'] = best_match.get('pair_score', best_match_score)
 
         company['best_site_match_score'] = best_match_score
         company['best_site_name'] = best_site_name

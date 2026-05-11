@@ -31,7 +31,7 @@ from modules.export import (
     safe_filename_token,
     safe_score,
 )
-from modules.scoring import calculate_site_compatibility_score
+from modules.scoring import calculate_lane_score, calculate_site_compatibility_score
 from modules.search import find_best_sites_for_company, get_site_recommendation_explanation
 from modules.review import (
     REVIEW_STATUS_LABELS,
@@ -42,6 +42,11 @@ from modules.review import (
     merge_review_record,
     review_status_tone,
     save_review_store,
+)
+from modules.supply_chains import (
+    build_supply_chain_catalog,
+    build_supply_chain_detail,
+    filter_supply_chains,
 )
 from modules.ui import (
     format_company_context,
@@ -237,6 +242,34 @@ def build_site_scan_summary(sites):
     }
 
 
+def build_supply_chain_scan_summary(chains):
+    """Build overview counts for the supply-chain dashboard."""
+    return {
+        'chain_count': len(chains),
+        'company_matches': sum(chain.get('count', 0) for chain in chains),
+        'strong_prospects': sum(chain.get('strong_count', 0) for chain in chains),
+        'rail_possible': sum(chain.get('possible_count', 0) for chain in chains),
+        'ready_for_outreach': sum(chain.get('ready_count', 0) for chain in chains),
+        'needs_site_review': sum(chain.get('site_review_count', 0) for chain in chains),
+    }
+
+
+def build_supply_chain_filter_options(chains):
+    """Build select-list values from configured supply-chain groups."""
+    return {
+        'groups': unique_sorted(chain.get('group') for chain in chains),
+        'opportunities': ['Strong rail prospect', 'Rail-service possible', 'Monitor'],
+        'readinesses': ['Ready for outreach', 'Qualify fit', 'Needs site review', 'Monitor'],
+        'sorts': [
+            {'value': 'strong', 'label': 'Strong rail prospects'},
+            {'value': 'ready', 'label': 'Ready for outreach'},
+            {'value': 'priority', 'label': 'Average priority'},
+            {'value': 'site_fit', 'label': 'Average site fit'},
+            {'value': 'matches', 'label': 'Company matches'},
+        ],
+    }
+
+
 def score_tone(score):
     """Return a visual status tone for a 0-100 score."""
     score = safe_score(score)
@@ -327,6 +360,10 @@ def build_workspace_data_gaps(company, site, compatibility_score=None):
     if pair_score < 60:
         gaps.append('Validate whether the company needs a different site type before outreach.')
 
+    lane = calculate_lane_score(company, site)
+    if lane['lane_score'] < 55:
+        gaps.append('Validate inbound and outbound lane assumptions against site rail, transload, highway, and port access.')
+
     if not gaps:
         gaps.append('Confirm acreage, rail service details, utility readiness, and company timing before outreach.')
 
@@ -367,6 +404,10 @@ def build_company_site_comparison(company, sites, segments, limit=5):
             'rank': index,
             'site': build_site_profile(site),
             'compatibility_score': compatibility_score,
+            'pair_score': safe_score(match.get('pair_score', 0)),
+            'lane_score': safe_score(match.get('lane_score', 0)),
+            'lane_readiness_label': match.get('lane_readiness_label', ''),
+            'lane_reasons': match.get('lane_reasons', []),
             'matching_reasons': get_site_recommendation_explanation(company, site),
             'risks_or_confirmation_items': build_workspace_data_gaps(
                 company,
@@ -381,6 +422,8 @@ def build_company_site_comparison(company, sites, segments, limit=5):
         first_choice_summary = {
             'site_name': first_choice['site'].get('site_name', ''),
             'compatibility_score': first_choice['compatibility_score'],
+            'lane_score': first_choice['lane_score'],
+            'lane_readiness_label': first_choice['lane_readiness_label'],
             'why': first_choice['matching_reasons'][:3],
         }
 
@@ -411,6 +454,7 @@ def build_opportunity_workspace(company, site, segments):
     """Build a JSON-ready selected company-site workspace payload."""
     segment_data = find_segment_for_company(segments, company)
     compatibility_score = safe_score(calculate_site_compatibility_score(company, site))
+    lane = calculate_lane_score(company, site)
     company_copy = company.copy()
     company_copy['best_recommended_site'] = site.get('site_name', '')
     company_copy['best_site_name'] = site.get('site_name', '')
@@ -440,6 +484,7 @@ def build_opportunity_workspace(company, site, segments):
             'compatibility_score': compatibility_score,
             'matching_reasons': get_site_recommendation_explanation(company, site),
         },
+        'lane': lane,
         'company_context': format_company_context(company, segment_data),
         'risks_or_data_gaps': build_workspace_data_gaps(company, site, compatibility_score=compatibility_score),
         'talking_points': build_workspace_talking_points(company, site, segment_data),
@@ -477,6 +522,9 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
         'interstate_access',
         'port_access',
         'target_industries',
+        'lane_score',
+        'lane_readiness_label',
+        'lane_reasons',
         'matching_reasons',
         'risks_or_confirmation_items',
     ]
@@ -497,6 +545,9 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
                 'interstate_access': site.get('interstate_access', ''),
                 'port_access': site.get('port_access', ''),
                 'target_industries': site.get('target_industries', ''),
+                'lane_score': compared_site.get('lane_score', ''),
+                'lane_readiness_label': compared_site.get('lane_readiness_label', ''),
+                'lane_reasons': '; '.join(compared_site.get('lane_reasons', [])),
                 'matching_reasons': '; '.join(compared_site.get('matching_reasons', [])),
                 'risks_or_confirmation_items': '; '.join(compared_site.get('risks_or_confirmation_items', [])),
             })
@@ -652,6 +703,47 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']),
         )
         return render_template('site_detail.html', report=report)
+
+    @app.route('/supply-chains')
+    def supply_chains():
+        _, companies, _, _ = get_data()
+        all_chains = build_supply_chain_catalog(companies)
+        filters = {
+            'group': str(request.args.get('group', '')).strip(),
+            'query': str(request.args.get('q', '')).strip(),
+            'min_priority': parse_min_score(request.args.get('min_priority')),
+            'opportunity': str(request.args.get('opportunity', '')).strip(),
+            'readiness': str(request.args.get('readiness', '')).strip(),
+            'sort': str(request.args.get('sort', 'strong')).strip() or 'strong',
+        }
+        visible_chains = filter_supply_chains(
+            all_chains,
+            group=filters['group'] or None,
+            query=filters['query'] or None,
+            min_priority=filters['min_priority'],
+            opportunity=filters['opportunity'] or None,
+            readiness=filters['readiness'] or None,
+            sort=filters['sort'],
+        )
+
+        return render_template(
+            'supply_chains.html',
+            chains=visible_chains,
+            total_count=len(all_chains),
+            filtered_count=len(visible_chains),
+            filters=filters,
+            filter_options=build_supply_chain_filter_options(all_chains),
+            scan_summary=build_supply_chain_scan_summary(visible_chains),
+        )
+
+    @app.route('/supply-chains/<slug>')
+    def supply_chain_detail(slug):
+        _, companies, _, _ = get_data()
+        chain = build_supply_chain_detail(slug, companies)
+        if not chain:
+            abort(404)
+
+        return render_template('supply_chain_detail.html', chain=chain)
 
     @app.route('/sites/<path:site_name>/review', methods=['POST'])
     def update_site_review(site_name):
@@ -828,6 +920,8 @@ def run_smoke_test():
         ('/companies', 200),
         ('/companies?state=TX&min_score=1', 200),
         ('/sites', 200),
+        ('/supply-chains', 200),
+        ('/supply-chains/steel', 200),
         ('/workspace?company=Nucor&site=Savannah%20Gateway%20Industrial%20Hub', 200),
         ('/companies/Nucor/site-comparison', 200),
     ]

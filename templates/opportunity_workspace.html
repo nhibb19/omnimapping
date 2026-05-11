@@ -21,6 +21,7 @@
   <div class="metrics">
     <div class="metric"><span class="muted">Priority score</span><strong>{{ workspace.priority.score }}/100</strong><span class="pill {{ score_tone(workspace.priority.score) }}">{{ priority_label(workspace.priority.score) }}</span></div>
     <div class="metric"><span class="muted">Compatibility</span><strong>{{ workspace.site_match.compatibility_score }}/100</strong><span class="pill {{ score_tone(workspace.site_match.compatibility_score) }}">{{ match_label(workspace.site_match.compatibility_score) }}</span></div>
+    <div class="metric"><span class="muted">Lane readiness</span><strong>{{ workspace.lane.lane_score }}/100</strong><span class="pill {{ score_tone(workspace.lane.lane_score) }}">{{ workspace.lane.lane_readiness_label }}</span></div>
     <div class="metric"><span class="muted">State pair</span><strong>{{ workspace.company.state }} to {{ workspace.site.state }}</strong></div>
   </div>
 </section>
@@ -44,6 +45,15 @@
       <h2>Why This Pair Fits</h2>
       <ul class="clean">
         {% for reason in workspace.site_match.matching_reasons %}
+          <li>{{ reason }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Lane Readiness</h2>
+      <ul class="clean">
+        {% for reason in workspace.lane.lane_reasons %}
           <li>{{ reason }}</li>
         {% endfor %}
       </ul>
