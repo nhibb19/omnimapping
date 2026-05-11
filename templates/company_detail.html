@@ -21,8 +21,8 @@
 <section class="scan-strip" aria-label="Company scan summary">
   <div class="scan-item {{ score_tone(report.priority.score) }}"><span class="muted">Priority</span><strong>{{ report.priority.score }}/100</strong></div>
   <div class="scan-item {{ score_tone(report.top_site_matches[0].compatibility_score if report.top_site_matches else 0) }}"><span class="muted">Best site fit</span><strong>{{ report.top_site_matches[0].compatibility_score if report.top_site_matches else 0 }}/100</strong></div>
+  <div class="scan-item {{ score_tone(report.top_site_matches[0].lane_score if report.top_site_matches else 0) }}"><span class="muted">Lane readiness</span><strong>{{ report.top_site_matches[0].lane_readiness_label if report.top_site_matches else 'Review' }}</strong></div>
   <div class="scan-item info"><span class="muted">Freight intensity</span><strong>{{ report.priority.freight_intensity_label or 'Review' }}</strong></div>
-  <div class="scan-item"><span class="muted">Site quality</span><strong>{{ report.priority.site_match_quality_label or 'Review' }}</strong></div>
 </section>
 
 <div class="layout">
@@ -91,6 +91,7 @@
       {% if best_site %}
         <h3><a href="{{ url_for('site_detail', site_name=best_site.site_name) }}">{{ best_site.site_name }}</a></h3>
         <p class="score">{{ best_site.compatibility_score }}/100 compatibility</p>
+        <p class="score">{{ best_site.lane_score }}/100 lane | {{ best_site.lane_readiness_label }}</p>
         <p>{{ best_site.site_location }}</p>
         <div class="actions">
           <a class="button primary" href="{{ url_for('opportunity_workspace', company=report.company_profile.company, site=best_site.site_name) }}">Open Workspace</a>
@@ -99,6 +100,9 @@
         </div>
         <ul class="clean">
           {% for reason in best_site.matching_reasons[:4] %}
+            <li>{{ reason }}</li>
+          {% endfor %}
+          {% for reason in best_site.lane_reasons[:2] %}
             <li>{{ reason }}</li>
           {% endfor %}
         </ul>
@@ -116,6 +120,7 @@
       <tr>
         <th>Site</th>
         <th>Compatibility</th>
+        <th>Lane</th>
         <th>Location</th>
         <th>Access</th>
           <th>Action</th>
@@ -126,6 +131,7 @@
         <tr>
           <td class="primary-cell"><span class="mobile-label">Site</span><a href="{{ url_for('site_detail', site_name=match.site_name) }}"><strong>{{ match.site_name }}</strong></a></td>
           <td><span class="mobile-label">Compatibility</span><span class="score-chip {{ score_tone(match.compatibility_score) }}"><strong>{{ match.compatibility_score }}</strong><span>{{ match_label(match.compatibility_score) }}</span></span></td>
+          <td><span class="mobile-label">Lane</span><span class="score-chip {{ score_tone(match.lane_score) }}"><strong>{{ match.lane_score }}</strong><span>{{ match.lane_readiness_label }}</span></span></td>
           <td><span class="mobile-label">Location</span>{{ match.site_location }}</td>
           <td>
             <span class="mobile-label">Access</span>

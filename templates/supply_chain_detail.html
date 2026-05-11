@@ -48,6 +48,7 @@
             <span><strong>{{ company.priority_score }}</strong> Priority</span>
             <span><strong>{{ company.rail_fit_score }}/5</strong> Rail fit</span>
             <span><strong>{{ company.best_site_match_score }}</strong> Site fit</span>
+            <span><strong>{{ company.best_lane_score }}</strong> Lane</span>
           </div>
           <div class="opportunity-note">{{ company.recommended_action }}</div>
           <div class="actions status-line">
@@ -105,6 +106,9 @@
                   <a class="pill review" href="{{ url_for('opportunity_workspace', company=company.company, site=company.best_site_name) }}">{{ company.best_site_match_score }}/100 site fit</a>
                 {% else %}
                   <span class="pill review">Site TBD</span>
+                {% endif %}
+                {% if company.best_lane_score %}
+                  <span class="pill {{ score_tone(company.best_lane_score) }}">{{ company.best_lane_readiness_label }}</span>
                 {% endif %}
               </div>
               <div class="actions status-line">

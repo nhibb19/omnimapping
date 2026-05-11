@@ -20,7 +20,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, ROOT_DIR)
 
 import main
-from modules.scoring import calculate_priority_score, calculate_overall_opportunity_score, calculate_site_compatibility_score
+from modules.scoring import calculate_lane_score, calculate_priority_score, calculate_overall_opportunity_score, calculate_site_compatibility_score
 from modules.search import search_companies, get_top_opportunities, find_best_sites_for_company, filter_by_min_score, get_companies_by_segment
 from modules.ui import get_priority_reasons
 from modules.data_quality import build_data_quality_report
@@ -556,6 +556,39 @@ class TestOmniMapping(unittest.TestCase):
 
         score = calculate_site_compatibility_score(company, site)
         self.assertTrue(0 <= score <= 100)
+
+    def test_lane_score_explains_strong_and_validation_lanes(self):
+        company = {
+            'segment': 'Chemicals',
+            'commodity_type': 'chemicals',
+            'rail_fit_score': '5',
+            'inbound_materials': 'chemical inputs',
+            'outbound_products': 'industrial chemicals for export',
+        }
+        strong_site = {
+            'rail_served': 'yes',
+            'nearby_class1': 'BNSF Railway',
+            'transload_available': 'yes',
+            'interstate_access': 'yes',
+            'port_access': 'yes',
+            'target_industries': 'chemicals, logistics',
+        }
+        weak_site = {
+            'rail_served': 'no',
+            'nearby_class1': '',
+            'transload_available': 'no',
+            'interstate_access': '',
+            'port_access': 'no',
+            'target_industries': '',
+        }
+
+        strong_lane = calculate_lane_score(company, strong_site)
+        weak_lane = calculate_lane_score(company, weak_site)
+
+        self.assertEqual(strong_lane['lane_readiness_label'], 'Strong lane')
+        self.assertGreater(strong_lane['lane_score'], weak_lane['lane_score'])
+        self.assertEqual(weak_lane['lane_readiness_label'], 'Validate lane')
+        self.assertGreaterEqual(len(strong_lane['lane_reasons']), 1)
 
     def test_top_opportunities_sorting(self):
         companies = [

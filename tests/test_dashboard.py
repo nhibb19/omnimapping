@@ -201,6 +201,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertNotIn('Acme Chemicals', body)
 
         _, companies, _, _ = self.loaded_data
+        self.assertTrue(all('best_lane_score' in company for company in companies))
         filtered = filter_companies_for_dashboard(companies, {'query': 'chemical inputs'})
         self.assertEqual([company['company'] for company in filtered], ['Acme Chemicals'])
 
@@ -367,6 +368,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('breakdown', workspace['priority'])
         self.assertGreaterEqual(len(workspace['priority']['reasons']), 1)
         self.assertGreater(workspace['site_match']['compatibility_score'], 0)
+        self.assertIn('lane', workspace)
+        self.assertGreater(workspace['lane']['lane_score'], 0)
+        self.assertGreaterEqual(len(workspace['lane']['lane_reasons']), 1)
         self.assertGreaterEqual(len(workspace['site_match']['matching_reasons']), 1)
         self.assertGreaterEqual(len(workspace['talking_points']), 1)
         self.assertGreaterEqual(len(workspace['risks_or_data_gaps']), 1)
@@ -384,6 +388,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
             comparison['compared_sites'][1]['compatibility_score'],
         )
         self.assertEqual(comparison['recommended_first_choice']['site_name'], 'Houston Rail Park')
+        self.assertGreater(comparison['recommended_first_choice']['lane_score'], 0)
+        self.assertIn('lane_readiness_label', comparison['recommended_first_choice'])
+        self.assertIn('lane_reasons', comparison['compared_sites'][0])
         self.assertGreaterEqual(len(comparison['recommended_first_choice']['why']), 1)
         self.assertGreaterEqual(len(comparison['compared_sites'][0]['risks_or_confirmation_items']), 1)
 
@@ -397,6 +404,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Houston Rail Park', body)
         self.assertIn('Denver Industrial Yard', body)
         self.assertIn('Target Industries', body)
+        self.assertIn('Lane', body)
+        self.assertIn('Strong lane', body)
         self.assertIn('Risks / Confirm', body)
         self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
         self.assertIn('/downloads/company-site-comparison/Acme%20Chemicals.json?limit=5', body)
@@ -538,6 +547,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Acme Chemicals', body)
         self.assertIn('Houston Rail Park', body)
         self.assertIn('Why This Pair Fits', body)
+        self.assertIn('Lane Readiness', body)
+        self.assertIn('Strong lane', body)
         self.assertIn('Talking Points', body)
         self.assertIn('Risks And Data Gaps', body)
         self.assertIn('/downloads/workspace.json?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
@@ -588,7 +599,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
             self.assertIn('text/csv', responses[1].content_type)
             self.assertIn('recommended_first_choice', responses[0].get_data(as_text=True))
             csv_body = responses[1].get_data(as_text=True)
-            self.assertIn('rank,site_name,compatibility_score', csv_body)
+            self.assertIn('lane_score', csv_body)
             self.assertIn('Houston Rail Park', csv_body)
             self.assertIn('Denver Industrial Yard', csv_body)
         finally:

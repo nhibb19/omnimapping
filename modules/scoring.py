@@ -16,6 +16,13 @@ REGION_STATES = {
 }
 
 HEAVY_SECTORS = {'steel', 'scrap', 'coal', 'ore', 'chemical', 'energy', 'construction', 'automotive'}
+RAIL_LANE_TERMS = {
+    'aggregate', 'alloy', 'bulk', 'cement', 'chemical', 'coal', 'coil', 'fertilizer',
+    'grain', 'iron', 'lumber', 'ore', 'pellet', 'pipe', 'plastic', 'resin', 'scrap',
+    'steel', 'stone', 'tube',
+}
+PORT_LANE_TERMS = {'export', 'import', 'port', 'ocean', 'container', 'international'}
+HIGHWAY_LANE_TERMS = {'distribution', 'finished goods', 'warehouse', 'retail', 'consumer', 'parts', 'food'}
 
 
 def normalize_text(value):
@@ -42,6 +49,11 @@ def safe_float(value, default=0.0):
 
 def is_yes(value):
     return normalize_text(value) in YES_VALUES
+
+
+def has_capability(value):
+    normalized = normalize_text(value)
+    return bool(normalized) and normalized not in {'no', 'false', '0', 'none', 'unknown', 'n/a'}
 
 
 def get_region(state):
@@ -260,6 +272,106 @@ def calculate_site_compatibility_score(company, site):
     score += calculate_acreage_fit(company, site)
 
     return clamp_score(score, 0, 100)
+
+
+def _contains_any(text, terms):
+    return any(term in text for term in terms)
+
+
+def _flow_context(company):
+    inbound = normalize_text(company.get('inbound_materials'))
+    outbound = normalize_text(company.get('outbound_products'))
+    segment = normalize_text(company.get('segment'))
+    commodity = normalize_text(company.get('commodity_type') or company.get('commodity'))
+    all_flow_text = " ".join([inbound, outbound, segment, commodity])
+    return inbound, outbound, segment, commodity, all_flow_text
+
+
+def calculate_lane_score(company, site):
+    """Score whether a company-site logistics lane appears workable."""
+    inbound, outbound, segment, commodity, flow_text = _flow_context(company)
+    score = 15
+    reasons = []
+
+    rail_intensive = safe_int(company.get('rail_fit_score'), 0) >= 4 or _contains_any(flow_text, RAIL_LANE_TERMS)
+    port_or_export = _contains_any(flow_text, PORT_LANE_TERMS)
+    highway_intensive = _contains_any(flow_text, HIGHWAY_LANE_TERMS)
+
+    if inbound and outbound:
+        score += 10
+        reasons.append("Inbound and outbound flows are defined enough to frame the lane.")
+    else:
+        reasons.append("Confirm missing inbound or outbound flow details before relying on the lane.")
+
+    if rail_intensive:
+        if has_capability(site.get('rail_served')):
+            score += 20
+            reasons.append("Rail service supports the company's heavy or rail-oriented flows.")
+        else:
+            score -= 10
+            reasons.append("Rail-oriented freight is present, but site rail service needs validation.")
+
+        if has_capability(site.get('nearby_class1')):
+            score += 12
+            reasons.append("Class I access improves line-haul optionality for the likely lane.")
+        else:
+            reasons.append("Confirm Class I interchange or serving railroad access.")
+
+        if has_capability(site.get('transload_available')):
+            score += 12
+            reasons.append("Transload availability gives the lane rail-to-truck flexibility.")
+        elif safe_int(company.get('rail_fit_score'), 0) >= 4:
+            score -= 4
+            reasons.append("Transload capacity should be confirmed for this rail-fit prospect.")
+    elif has_capability(site.get('rail_served')):
+        score += 8
+        reasons.append("Rail service is available as optional logistics upside.")
+
+    if highway_intensive or not rail_intensive:
+        if has_capability(site.get('interstate_access')):
+            score += 14
+            reasons.append("Interstate access supports outbound distribution and truck drayage.")
+        else:
+            score -= 4
+            reasons.append("Truck routing and interstate access need confirmation.")
+    elif has_capability(site.get('interstate_access')):
+        score += 8
+        reasons.append("Interstate access strengthens first-mile and last-mile flexibility.")
+
+    if port_or_export or has_capability(company.get('nearest_port')):
+        if has_capability(site.get('port_access')):
+            score += 12
+            reasons.append("Port access fits possible import, export, or coastal supply-chain lanes.")
+        else:
+            reasons.append("Port-oriented demand may need a different routing plan.")
+    elif has_capability(site.get('port_access')):
+        score += 5
+        reasons.append("Port access adds optionality even if export demand is not yet confirmed.")
+
+    target_industries = normalize_text(site.get('target_industries'))
+    if (segment and segment in target_industries) or (commodity and commodity in target_industries):
+        score += 15
+        reasons.append("Site target industries align with the company's segment or commodity.")
+    elif target_industries:
+        reasons.append("Commodity fit is plausible but should be checked against site targeting.")
+    else:
+        reasons.append("Site target industries are blank, so commodity fit needs validation.")
+
+    normalized_score = clamp_score(round(score), 0, 100)
+    if normalized_score >= 75:
+        label = "Strong lane"
+    elif normalized_score >= 55:
+        label = "Workable lane"
+    else:
+        label = "Validate lane"
+
+    return {
+        'lane_score': normalized_score,
+        'lane_readiness_label': label,
+        'lane_reasons': reasons[:6],
+        'inbound_context': inbound,
+        'outbound_context': outbound,
+    }
 
 def calculate_overall_opportunity_score(company, segment_data):
     """

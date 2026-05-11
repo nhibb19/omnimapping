@@ -3,7 +3,7 @@ OmniMapping Search Module
 Contains all search, filtering, and data retrieval functions.
 """
 
-from .scoring import calculate_site_compatibility_score, calculate_acreage_fit, get_region
+from .scoring import calculate_lane_score, calculate_site_compatibility_score, calculate_acreage_fit, get_region
 
 
 def safe_score(value, default=0):
@@ -74,13 +74,20 @@ def find_best_sites_for_company(company, sites, limit=3):
 
     for site in sites:
         compatibility_score = calculate_site_compatibility_score(company, site)
+        lane = calculate_lane_score(company, site)
+        pair_score = round((compatibility_score * 0.7) + (lane['lane_score'] * 0.3))
         site_matches.append({
             'site': site,
-            'compatibility_score': compatibility_score
+            'compatibility_score': compatibility_score,
+            'pair_score': pair_score,
+            **lane,
         })
 
-    # Sort by compatibility score descending
-    site_matches.sort(key=lambda x: x['compatibility_score'], reverse=True)
+    # Sort by blended site and lane fit so recommended sites reflect route viability.
+    site_matches.sort(
+        key=lambda x: (x['pair_score'], x['compatibility_score'], x['lane_score']),
+        reverse=True,
+    )
 
     return site_matches[:limit]
 
@@ -126,6 +133,12 @@ def get_site_recommendation_explanation(company, site):
         reasons.append("Site acreage is a good match for the company's industrial land needs")
     elif acreage_fit >= 4:
         reasons.append("Site acreage may be workable for the company's anticipated growth")
+
+    lane = calculate_lane_score(company, site)
+    if lane['lane_score'] >= 75:
+        reasons.append(f"{lane['lane_readiness_label']}: likely lane has strong logistics support")
+    elif lane['lane_score'] >= 55:
+        reasons.append(f"{lane['lane_readiness_label']}: lane appears workable with follow-up validation")
 
     if not reasons:
         reasons.append("General industrial site with development potential")

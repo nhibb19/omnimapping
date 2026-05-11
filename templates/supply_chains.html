@@ -115,6 +115,9 @@
               <div class="pill-row">
                 <span class="pill {{ company.opportunity_tone }}">{{ company.opportunity_label }}</span>
                 <span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span>
+                {% if company.best_lane_score %}
+                  <span class="pill {{ score_tone(company.best_lane_score) }}">{{ company.best_lane_readiness_label }}</span>
+                {% endif %}
               </div>
             </div>
           {% else %}

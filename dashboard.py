@@ -31,7 +31,7 @@ from modules.export import (
     safe_filename_token,
     safe_score,
 )
-from modules.scoring import calculate_site_compatibility_score
+from modules.scoring import calculate_lane_score, calculate_site_compatibility_score
 from modules.search import find_best_sites_for_company, get_site_recommendation_explanation
 from modules.review import (
     REVIEW_STATUS_LABELS,
@@ -360,6 +360,10 @@ def build_workspace_data_gaps(company, site, compatibility_score=None):
     if pair_score < 60:
         gaps.append('Validate whether the company needs a different site type before outreach.')
 
+    lane = calculate_lane_score(company, site)
+    if lane['lane_score'] < 55:
+        gaps.append('Validate inbound and outbound lane assumptions against site rail, transload, highway, and port access.')
+
     if not gaps:
         gaps.append('Confirm acreage, rail service details, utility readiness, and company timing before outreach.')
 
@@ -400,6 +404,10 @@ def build_company_site_comparison(company, sites, segments, limit=5):
             'rank': index,
             'site': build_site_profile(site),
             'compatibility_score': compatibility_score,
+            'pair_score': safe_score(match.get('pair_score', 0)),
+            'lane_score': safe_score(match.get('lane_score', 0)),
+            'lane_readiness_label': match.get('lane_readiness_label', ''),
+            'lane_reasons': match.get('lane_reasons', []),
             'matching_reasons': get_site_recommendation_explanation(company, site),
             'risks_or_confirmation_items': build_workspace_data_gaps(
                 company,
@@ -414,6 +422,8 @@ def build_company_site_comparison(company, sites, segments, limit=5):
         first_choice_summary = {
             'site_name': first_choice['site'].get('site_name', ''),
             'compatibility_score': first_choice['compatibility_score'],
+            'lane_score': first_choice['lane_score'],
+            'lane_readiness_label': first_choice['lane_readiness_label'],
             'why': first_choice['matching_reasons'][:3],
         }
 
@@ -444,6 +454,7 @@ def build_opportunity_workspace(company, site, segments):
     """Build a JSON-ready selected company-site workspace payload."""
     segment_data = find_segment_for_company(segments, company)
     compatibility_score = safe_score(calculate_site_compatibility_score(company, site))
+    lane = calculate_lane_score(company, site)
     company_copy = company.copy()
     company_copy['best_recommended_site'] = site.get('site_name', '')
     company_copy['best_site_name'] = site.get('site_name', '')
@@ -473,6 +484,7 @@ def build_opportunity_workspace(company, site, segments):
             'compatibility_score': compatibility_score,
             'matching_reasons': get_site_recommendation_explanation(company, site),
         },
+        'lane': lane,
         'company_context': format_company_context(company, segment_data),
         'risks_or_data_gaps': build_workspace_data_gaps(company, site, compatibility_score=compatibility_score),
         'talking_points': build_workspace_talking_points(company, site, segment_data),
@@ -510,6 +522,9 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
         'interstate_access',
         'port_access',
         'target_industries',
+        'lane_score',
+        'lane_readiness_label',
+        'lane_reasons',
         'matching_reasons',
         'risks_or_confirmation_items',
     ]
@@ -530,6 +545,9 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
                 'interstate_access': site.get('interstate_access', ''),
                 'port_access': site.get('port_access', ''),
                 'target_industries': site.get('target_industries', ''),
+                'lane_score': compared_site.get('lane_score', ''),
+                'lane_readiness_label': compared_site.get('lane_readiness_label', ''),
+                'lane_reasons': '; '.join(compared_site.get('lane_reasons', [])),
                 'matching_reasons': '; '.join(compared_site.get('matching_reasons', [])),
                 'risks_or_confirmation_items': '; '.join(compared_site.get('risks_or_confirmation_items', [])),
             })
