@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 
+from flask import request
+
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, ROOT_DIR)
 
@@ -16,12 +18,14 @@ from dashboard import (
     build_company_scan_summary,
     build_opportunity_workspace,
     build_opportunity_map,
+    build_map_filter_options,
     build_site_scan_summary,
     build_supply_chain_filter_options,
     build_supply_chain_scan_summary,
     create_app,
     filter_companies_for_dashboard,
     filter_site_directory,
+    get_map_filter_args,
     parse_limit,
     parse_min_score,
     unique_sorted,
@@ -242,24 +246,361 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(map_data['type_counts']['company'], 1)
         self.assertEqual(map_data['top_opportunities'][0]['label'], 'Acme Chemicals')
         self.assertEqual(map_data['top_states'][0]['state'], 'TX')
+        self.assertEqual(map_data['top_states'][0]['count'], 2)
+        self.assertIn('State: TX', map_data['filter_context']['active_labels'])
+
+    def test_opportunity_map_segment_and_confidence_filters_apply_to_all_layers(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        with self.app.test_request_context('/map?segment=Chemicals&source_confidence=Unspecified&node_type=company&node_type=site'):
+            map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': 'Chemicals',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': 'Unspecified',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        labels = {marker['label'] for marker in map_data['markers']}
+        self.assertIn('Acme Chemicals', labels)
+        self.assertNotIn('Front Range Logistics', labels)
+        self.assertIn('Houston Rail Park', labels)
+        self.assertNotIn('Denver Industrial Yard', labels)
+        self.assertIn('Segment: Chemicals', map_data['filter_context']['active_labels'])
+        self.assertIn('Site/rail confidence: Unspecified', map_data['filter_context']['active_labels'])
+
+        with self.app.test_request_context('/map?commodity=chemicals&node_type=company&node_type=site'):
+            commodity_map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': 'chemicals',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        commodity_labels = {marker['label'] for marker in commodity_map_data['markers']}
+        self.assertIn('Acme Chemicals', commodity_labels)
+        self.assertIn('Houston Rail Park', commodity_labels)
+        self.assertNotIn('Front Range Logistics', commodity_labels)
+        self.assertNotIn('Denver Industrial Yard', commodity_labels)
+        self.assertIn('Commodity: chemicals', commodity_map_data['filter_context']['active_labels'])
+
+    def test_opportunity_map_confidence_filter_keeps_companies_without_confidence(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        confident_sites = [
+            {**site, 'source_confidence': 'High' if site['site_name'] == 'Houston Rail Park' else 'Medium'}
+            for site in sites
+        ]
+        confident_rail = [
+            {**rail, 'source_confidence': 'High' if rail['location'] == 'Houston Hub' else 'Medium'}
+            for rail in rail_infrastructure
+        ]
+
+        with self.app.test_request_context('/map?source_confidence=High&node_type=company&node_type=site&node_type=rail'):
+            map_data = build_opportunity_map(
+                companies,
+                confident_sites,
+                confident_rail,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': 'High',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site', 'rail'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        labels = {marker['label'] for marker in map_data['markers']}
+        self.assertIn('Acme Chemicals', labels)
+        self.assertIn('Front Range Logistics', labels)
+        self.assertIn('Houston Rail Park', labels)
+        self.assertIn('Houston Hub', labels)
+        self.assertNotIn('Denver Industrial Yard', labels)
+        self.assertNotIn('Denver Hub', labels)
+        self.assertEqual(map_data['type_counts']['company'], 2)
+        self.assertEqual(map_data['type_counts']['site'], 1)
+        self.assertEqual(map_data['type_counts']['rail'], 1)
+
+    def test_opportunity_map_readiness_filter_uses_persisted_review_status(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        reviewable_sites = [
+            {
+                **site,
+                'acres': site.get('acres') or '75',
+                'source_url': 'https://example.com/site',
+                'source_confidence': 'High',
+                'last_verified': '2026-05-09',
+                'data_gap_notes': '',
+            }
+            for site in sites
+        ]
+        save_review_store(self.review_store_path, {
+            'Houston Rail Park': build_review_update(
+                {},
+                'blocked',
+                notes='Blocked until the site owner confirms availability.',
+            ),
+        })
+
+        with self.app.test_request_context('/map?site_readiness=Blocked%20By%20Data%20Gaps&node_type=site'):
+            map_data = build_opportunity_map(
+                companies,
+                reviewable_sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': 'Blocked By Data Gaps',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+            filter_options = build_map_filter_options(
+                companies,
+                reviewable_sites,
+                [],
+                rail_infrastructure=rail_infrastructure,
+                review_store_path=self.review_store_path,
+            )
+
+        labels = {marker['label'] for marker in map_data['markers']}
+        self.assertEqual(labels, {'Houston Rail Park'})
+        self.assertEqual(map_data['type_counts']['site'], 1)
+        self.assertIn('Site readiness: Blocked By Data Gaps', map_data['filter_context']['active_labels'])
+        self.assertTrue(any(
+            detail.endswith('(Blocked By Data Gaps)')
+            for detail in map_data['markers'][0]['details']
+        ))
+        self.assertIn('Blocked By Data Gaps', filter_options['site_readinesses'])
+
+    def test_opportunity_map_layer_selection_controls_counts_and_state_shading(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        with self.app.test_request_context('/map?node_type=site'):
+            site_map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(site_map_data['type_counts']['company'], 0)
+        self.assertEqual(site_map_data['type_counts']['site'], 2)
+        self.assertEqual(site_map_data['summary']['companies'], 0)
+        self.assertEqual(site_map_data['summary']['sites'], 2)
+        self.assertEqual(site_map_data['summary']['high_priority'], 0)
+        self.assertEqual(site_map_data['summary']['states'], 2)
+        self.assertTrue(all(profile['companies'] == 0 for profile in site_map_data['state_profiles'].values()))
+        self.assertTrue(all(profile['top_score'] > 0 for profile in site_map_data['state_profiles'].values()))
+        self.assertIn('Layers: sites', site_map_data['filter_context']['active_labels'])
+
+        with self.app.test_request_context('/map?node_type=company'):
+            company_map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(company_map_data['type_counts']['company'], 2)
+        self.assertEqual(company_map_data['type_counts']['site'], 0)
+        self.assertEqual(company_map_data['summary']['companies'], 2)
+        self.assertEqual(company_map_data['summary']['sites'], 0)
+        self.assertEqual(company_map_data['summary']['ready_sites'], 0)
+        self.assertTrue(all(profile['sites'] == 0 for profile in company_map_data['state_profiles'].values()))
+        self.assertIn('Layers: companies', company_map_data['filter_context']['active_labels'])
+
+    def test_opportunity_map_confidence_filter_treats_blank_source_as_unspecified(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        blank_confidence_sites = [
+            {**site, 'source_confidence': ''}
+            for site in sites
+        ]
+        blank_confidence_rail = [
+            {**rail, 'source_confidence': ''}
+            for rail in rail_infrastructure
+        ]
+
+        with self.app.test_request_context('/map?source_confidence=Unspecified&node_type=site&node_type=rail'):
+            map_data = build_opportunity_map(
+                companies,
+                blank_confidence_sites,
+                blank_confidence_rail,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': 'Unspecified',
+                    'supply_chain': '',
+                    'node_types': ['site', 'rail'],
+                },
+                review_store_path=self.review_store_path,
+            )
+            filter_options = build_map_filter_options(
+                companies,
+                blank_confidence_sites,
+                [],
+                rail_infrastructure=blank_confidence_rail,
+                review_store_path=self.review_store_path,
+            )
+
+        labels = {marker['label'] for marker in map_data['markers']}
+        self.assertIn('Houston Rail Park', labels)
+        self.assertIn('Denver Industrial Yard', labels)
+        self.assertIn('Houston Hub', labels)
+        self.assertIn('Denver Hub', labels)
+        self.assertIn('Unspecified', filter_options['source_confidences'])
+        self.assertIn('Site/rail confidence: Unspecified', map_data['filter_context']['active_labels'])
+
+    def test_opportunity_map_preserves_intentionally_empty_layer_selection(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        with self.app.test_request_context('/map?layers_submitted=1'):
+            filters = get_map_filter_args(request.args)
+            map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                filters,
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(filters['node_types'], [])
+        self.assertEqual(map_data['markers'], [])
+        self.assertEqual(map_data['summary']['markers'], 0)
+        self.assertEqual(map_data['type_counts']['company'], 0)
+        self.assertEqual(map_data['type_counts']['site'], 0)
+        self.assertIn('Layers: none', map_data['filter_context']['active_labels'])
+
+    def test_opportunity_map_port_context_requires_visible_company_layer(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        with self.app.test_request_context('/map?node_type=site&node_type=port'):
+            site_port_map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['site', 'port'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(site_port_map_data['type_counts']['site'], 2)
+        self.assertEqual(site_port_map_data['type_counts']['port'], 0)
+
+        with self.app.test_request_context('/map?node_type=company&node_type=port'):
+            company_port_map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company', 'port'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(company_port_map_data['type_counts']['company'], 2)
+        self.assertGreater(company_port_map_data['type_counts']['port'], 0)
 
     def test_opportunity_map_route_shows_filters_markers_and_workflow_links(self):
         response = self.client.get('/map?state=TX&segment=Chemicals&commodity=chemicals&min_score=1')
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn('Opportunity Map', body)
-        self.assertIn('Opportunity Filters', body)
-        self.assertIn('Map Layers', body)
-        self.assertIn('Map Intelligence', body)
+        self.assertIn('<h1>Map</h1>', body)
+        self.assertNotIn('Opportunity Map', body)
+        self.assertIn('Filters', body)
+        self.assertIn('Layers', body)
+        self.assertIn('Insights', body)
         self.assertIn('Top mapped opportunities', body)
-        self.assertIn('Selected Node', body)
+        self.assertIn('Inspect', body)
+        self.assertIn('Filtered Result', body)
+        self.assertIn('Fit Results', body)
+        self.assertIn('Cluster', body)
         self.assertIn('Acme Chemicals', body)
         self.assertIn('Houston Rail Park', body)
-        self.assertIn('Houston Hub', body)
+        self.assertNotIn('Houston Hub', body)
         self.assertIn('Supply chain', body)
+        self.assertIn('Site/rail confidence', body)
         self.assertIn('Min site fit', body)
-        self.assertIn('Rail / transload', body)
+        self.assertIn('Rail context', body)
         self.assertIn('/companies/Acme%20Chemicals/site-comparison', body)
         self.assertIn('/workspace?company=Acme+Chemicals', body)
         self.assertIn('site=Houston+Rail+Park', body)

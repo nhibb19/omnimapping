@@ -44,7 +44,7 @@ from modules.review import (
     review_status_tone,
     save_review_store,
 )
-from modules.data_quality import build_research_readiness
+from modules.data_quality import build_research_readiness, confidence_label
 from modules.supply_chains import (
     SUPPLY_CHAIN_DEFINITIONS,
     build_supply_chain_catalog,
@@ -60,6 +60,63 @@ from modules.ui import (
     print_opportunity_brief,
 )
 from modules.geographic_scoring import MAJOR_PORTS, calculate_distance, find_nearest_port
+
+STATE_NAMES = {
+    'AL': 'Alabama',
+    'AK': 'Alaska',
+    'AZ': 'Arizona',
+    'AR': 'Arkansas',
+    'CA': 'California',
+    'CO': 'Colorado',
+    'CT': 'Connecticut',
+    'DE': 'Delaware',
+    'FL': 'Florida',
+    'GA': 'Georgia',
+    'HI': 'Hawaii',
+    'ID': 'Idaho',
+    'IL': 'Illinois',
+    'IN': 'Indiana',
+    'IA': 'Iowa',
+    'KS': 'Kansas',
+    'KY': 'Kentucky',
+    'LA': 'Louisiana',
+    'ME': 'Maine',
+    'MD': 'Maryland',
+    'MA': 'Massachusetts',
+    'MI': 'Michigan',
+    'MN': 'Minnesota',
+    'MS': 'Mississippi',
+    'MO': 'Missouri',
+    'MT': 'Montana',
+    'NE': 'Nebraska',
+    'NV': 'Nevada',
+    'NH': 'New Hampshire',
+    'NJ': 'New Jersey',
+    'NM': 'New Mexico',
+    'NY': 'New York',
+    'NC': 'North Carolina',
+    'ND': 'North Dakota',
+    'OH': 'Ohio',
+    'OK': 'Oklahoma',
+    'OR': 'Oregon',
+    'PA': 'Pennsylvania',
+    'RI': 'Rhode Island',
+    'SC': 'South Carolina',
+    'SD': 'South Dakota',
+    'TN': 'Tennessee',
+    'TX': 'Texas',
+    'UT': 'Utah',
+    'VT': 'Vermont',
+    'VA': 'Virginia',
+    'WA': 'Washington',
+    'WV': 'West Virginia',
+    'WI': 'Wisconsin',
+    'WY': 'Wyoming',
+    'DC': 'District of Columbia',
+}
+
+MAP_NODE_TYPES = ('company', 'site', 'rail', 'port')
+DEFAULT_MAP_NODE_TYPES = ('company', 'site')
 
 
 def unique_sorted(values):
@@ -330,6 +387,8 @@ def derive_map_coordinates(record, rail_coordinate_index=None):
             return coordinate[0], coordinate[1], 'rail infrastructure match'
 
     city = str(record.get('city') or record.get('major_city') or '').strip()
+    if not city and record.get('location'):
+        city = str(record.get('location') or '').split(',')[0].strip()
     if city in CITY_COORDINATES:
         lat, lon = CITY_COORDINATES[city]
         return lat, lon, 'city coordinates'
@@ -339,7 +398,15 @@ def derive_map_coordinates(record, rail_coordinate_index=None):
 
 def get_map_filter_args(args):
     """Collect opportunity-map filters from the query string."""
-    node_types = args.getlist('node_type')
+    requested_node_types = args.getlist('node_type')
+    node_types = [
+        node_type for node_type in requested_node_types
+        if node_type in MAP_NODE_TYPES
+    ]
+    if args.get('layers_submitted') and not node_types:
+        selected_node_types = []
+    else:
+        selected_node_types = node_types or list(DEFAULT_MAP_NODE_TYPES)
     return {
         'query': str(args.get('q', '')).strip(),
         'state': str(args.get('state', '')).strip().upper(),
@@ -350,21 +417,26 @@ def get_map_filter_args(args):
         'site_readiness': str(args.get('site_readiness', '')).strip(),
         'source_confidence': str(args.get('source_confidence', '')).strip(),
         'supply_chain': str(args.get('supply_chain', '')).strip(),
-        'node_types': node_types or ['company', 'site', 'rail', 'port'],
+        'node_types': selected_node_types,
     }
 
 
-def build_map_filter_options(companies, sites, chains):
+def build_map_filter_options(companies, sites, chains, rail_infrastructure=None, review_store_path=None):
     """Build select values for the map view."""
+    rail_infrastructure = rail_infrastructure or []
+    site_rows = merge_review_records(
+        build_site_directory(sites),
+        load_review_store(review_store_path) if review_store_path else {},
+    )
     return {
         **build_filter_options(companies),
         'site_readinesses': unique_sorted(
-            build_research_readiness(site).get('label')
-            for site in sites
+            site.get('research_readiness', {}).get('label')
+            for site in site_rows
         ),
         'source_confidences': unique_sorted(
-            list(site.get('source_confidence') for site in sites)
-            + list(company.get('source_confidence') for company in companies)
+            list(confidence_label(site) for site in site_rows)
+            + list(confidence_label(rail) for rail in rail_infrastructure)
         ),
         'supply_chains': [
             {'value': chain['slug'], 'label': chain['name']}
@@ -373,8 +445,8 @@ def build_map_filter_options(companies, sites, chains):
         'node_types': [
             {'value': 'company', 'label': 'Companies'},
             {'value': 'site', 'label': 'Sites'},
-            {'value': 'rail', 'label': 'Rail / transload'},
-            {'value': 'port', 'label': 'Ports'},
+            {'value': 'rail', 'label': 'Rail context'},
+            {'value': 'port', 'label': 'Port context'},
         ],
     }
 
@@ -435,6 +507,45 @@ def has_map_opportunity_filters(filters):
     ])
 
 
+def build_map_active_filter_labels(filters):
+    """Return concise labels for filters that should explain the current map set."""
+    labels = []
+    if filters.get('query'):
+        labels.append(f"Search: {filters['query']}")
+    if filters.get('state'):
+        labels.append(f"State: {filters['state']}")
+    if filters.get('segment'):
+        labels.append(f"Segment: {filters['segment']}")
+    if filters.get('commodity'):
+        labels.append(f"Commodity: {filters['commodity']}")
+    if filters.get('supply_chain'):
+        chain = next(
+            (item for item in SUPPLY_CHAIN_DEFINITIONS if item.get('slug') == filters['supply_chain']),
+            None,
+        )
+        labels.append(f"Supply chain: {chain.get('name') if chain else filters['supply_chain']}")
+    if filters.get('min_score') is not None:
+        labels.append(f"Company priority >= {filters['min_score']}")
+    if filters.get('min_site_fit') is not None:
+        labels.append(f"Company site fit >= {filters['min_site_fit']}")
+    if filters.get('site_readiness'):
+        labels.append(f"Site readiness: {filters['site_readiness']}")
+    if filters.get('source_confidence'):
+        labels.append(f"Site/rail confidence: {filters['source_confidence']}")
+    node_types = filters.get('node_types') or []
+    if set(node_types) != set(DEFAULT_MAP_NODE_TYPES):
+        readable_layers = {
+            'company': 'companies',
+            'site': 'sites',
+            'rail': 'rail context',
+            'port': 'port context',
+        }
+        labels.append(
+            f"Layers: {', '.join(readable_layers.get(node_type, node_type) for node_type in node_types) if node_types else 'none'}"
+        )
+    return labels
+
+
 def is_near_any_coordinate(lat, lon, coordinates, max_miles=250):
     """Return whether a coordinate is near any visible opportunity anchor."""
     for anchor_lat, anchor_lon in coordinates:
@@ -449,6 +560,9 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
     rail_coordinate_index = build_rail_coordinate_index(rail_infrastructure)
     markers = []
     visible_node_types = set(filters.get('node_types') or [])
+    active_filters = build_map_active_filter_labels(filters)
+    mapped_companies = []
+    mapped_sites = []
 
     filtered_companies = filter_companies_for_dashboard(companies, {
         'query': filters.get('query') or None,
@@ -466,7 +580,6 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
         company for company in filtered_companies
         if company_matches_supply_chain(company, filters.get('supply_chain'))
     ]
-
     if 'company' in visible_node_types:
         for company in filtered_companies:
             lat, lon, coordinate_source = derive_map_coordinates(company, rail_coordinate_index)
@@ -491,6 +604,7 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'subtitle': format_company_location(company),
                 'lat': lat,
                 'lon': lon,
+                'state': str(company.get('state') or '').upper(),
                 'tone': tone,
                 'tone_label': map_marker_tone_label(tone),
                 'score': priority_score,
@@ -507,16 +621,20 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                     if best_site else []
                 ),
             })
+            mapped_companies.append(company)
 
     site_rows = merge_review_records(
         build_site_directory(sites),
         load_review_store(review_store_path) if review_store_path else {},
     )
-    site_lookup = {site.get('site_name'): site for site in sites}
+    filtered_company_site_names = {
+        company.get('best_site_name') or company.get('best_recommended_site')
+        for company in filtered_companies
+        if company.get('best_site_name') or company.get('best_recommended_site')
+    }
     filtered_sites = []
     for site_row in site_rows:
-        source_site = site_lookup.get(site_row.get('site_name'), site_row)
-        readiness = build_research_readiness(source_site)
+        readiness = site_row.get('research_readiness') or build_research_readiness(site_row)
         if filters.get('query') and not record_matches_query(
             site_row,
             filters['query'],
@@ -525,11 +643,13 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
             continue
         if filters.get('state') and site_row.get('state', '').upper() != filters['state']:
             continue
+        if filters.get('segment') and site_row.get('site_name') not in filtered_company_site_names:
+            continue
         if filters.get('commodity') and filters['commodity'].lower() not in str(site_row.get('target_industries', '')).lower():
             continue
         if filters.get('site_readiness') and readiness.get('label') != filters['site_readiness']:
             continue
-        if filters.get('source_confidence') and site_row.get('source_confidence', '') != filters['source_confidence']:
+        if filters.get('source_confidence') and confidence_label(site_row) != filters['source_confidence']:
             continue
         site_row = {**site_row, 'research_readiness': readiness}
         filtered_sites.append(site_row)
@@ -555,6 +675,7 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'subtitle': site.get('location') or format_site_location(site),
                 'lat': lat,
                 'lon': lon,
+                'state': str(site.get('state') or '').upper(),
                 'tone': tone,
                 'tone_label': map_marker_tone_label(tone),
                 'score': score,
@@ -567,23 +688,26 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                     f"Rail served: {site.get('rail_served') or 'Confirm'}",
                     f"Transload: {site.get('transload_available') or 'Confirm'}",
                     f"Port access: {site.get('port_access') or 'Confirm'}",
-                    f"Confidence: {site.get('source_confidence') or 'Unspecified'}",
+                    f"Confidence: {confidence_label(site)}",
                     f"Coordinates: {coordinate_source}",
                 ],
                 'links': [
                     {'label': 'Site', 'url': url_for('site_detail', site_name=site.get('site_name', ''))},
                 ],
             })
+            mapped_sites.append(site)
 
     if 'rail' in visible_node_types:
         for rail in rail_infrastructure:
+            if has_map_opportunity_filters(filters) and not anchor_coordinates:
+                continue
             if filters.get('query') and not record_matches_query(
                 rail,
                 filters['query'],
                 ['location', 'type', 'major_city', 'region', 'interstate_access'],
             ):
                 continue
-            if filters.get('source_confidence') and rail.get('source_confidence', '') != filters['source_confidence']:
+            if filters.get('source_confidence') and confidence_label(rail) != filters['source_confidence']:
                 continue
             lat, lon, coordinate_source = derive_map_coordinates(rail, rail_coordinate_index)
             if lat is None or lon is None:
@@ -603,6 +727,7 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'subtitle': rail.get('type', ''),
                 'lat': lat,
                 'lon': lon,
+                'state': '',
                 'tone': tone,
                 'tone_label': map_marker_tone_label(tone),
                 'score': logistics_score,
@@ -615,15 +740,15 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                     f"Rail connections {rail.get('rail_connections', '')}",
                     f"Transload hub: {rail.get('transload_hub') or 'Confirm'}",
                     f"Port nearby: {rail.get('port_nearby') or 'Confirm'}",
-                    f"Confidence: {rail.get('source_confidence') or 'Unspecified'}",
+                    f"Confidence: {confidence_label(rail)}",
                     f"Coordinates: {coordinate_source}",
                 ],
                 'links': [],
             })
 
-    if 'port' in visible_node_types:
+    if 'company' in visible_node_types and 'port' in visible_node_types and mapped_companies:
         visible_ports = {}
-        for company in filtered_companies:
+        for company in mapped_companies:
             port_info = find_nearest_port(company)
             if port_info and port_info.get('port_name') in MAJOR_PORTS:
                 visible_ports[port_info['port_name']] = port_info
@@ -638,6 +763,7 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
                 'subtitle': 'Nearest port for visible opportunities',
                 'lat': lat,
                 'lon': lon,
+                'state': '',
                 'tone': 'port',
                 'tone_label': map_marker_tone_label('port'),
                 'score': 70 if port_info.get('port_accessible') else 45,
@@ -654,38 +780,110 @@ def build_opportunity_map(companies, sites, rail_infrastructure, filters, review
             })
 
     state_counts = {}
-    for company in filtered_companies:
-        state = company.get('state') or 'Unknown'
-        state_counts[state] = state_counts.get(state, 0) + 1
+    state_profiles = {}
+    if 'company' in visible_node_types:
+        for company in mapped_companies:
+            state = str(company.get('state') or 'Unknown').upper()
+            profile = state_profiles.setdefault(state, {
+                'state': state,
+                'name': STATE_NAMES.get(state, state),
+                'companies': 0,
+                'sites': 0,
+                'ready_sites': 0,
+                'high_priority': 0,
+                'priority_total': 0,
+                'top_score': 0,
+                'top_label': '',
+            })
+            score = safe_score(company.get('priority_score', 0))
+            profile['companies'] += 1
+            profile['priority_total'] += score
+            if score >= 80:
+                profile['high_priority'] += 1
+            if score > profile['top_score']:
+                profile['top_score'] = score
+                profile['top_label'] = company.get('company', '')
+
+    if 'site' in visible_node_types:
+        for site in mapped_sites:
+            state = str(site.get('state') or 'Unknown').upper()
+            profile = state_profiles.setdefault(state, {
+                'state': state,
+                'name': STATE_NAMES.get(state, state),
+                'companies': 0,
+                'sites': 0,
+                'ready_sites': 0,
+                'high_priority': 0,
+                'priority_total': 0,
+                'top_score': 0,
+                'top_label': '',
+            })
+            readiness_score = safe_score(site.get('research_readiness', {}).get('score', 0))
+            profile['sites'] += 1
+            if readiness_score >= 70:
+                profile['ready_sites'] += 1
+            if readiness_score > profile['top_score']:
+                profile['top_score'] = readiness_score
+            if not profile['top_label']:
+                profile['top_label'] = site.get('site_name', '')
+
+    for profile in state_profiles.values():
+        profile['avg_priority'] = round(profile['priority_total'] / profile['companies']) if profile['companies'] else 0
+        profile['activity'] = profile['companies'] + profile['sites']
+        profile['readiness'] = round((profile['ready_sites'] / profile['sites']) * 100) if profile['sites'] else 0
+        state_counts[profile['state']] = profile['activity']
 
     markers.sort(key=lambda marker: (marker['type'] != 'company', -safe_score(marker.get('score', 0)), marker['label']))
     type_counts = {}
     for marker in markers:
         type_counts[marker['type']] = type_counts.get(marker['type'], 0) + 1
+    type_counts = {
+        node_type: type_counts.get(node_type, 0)
+        for node_type in MAP_NODE_TYPES
+    }
     top_opportunities = [
         marker for marker in markers
         if marker.get('type') == 'company'
     ][:5]
     top_states = [
-        {'state': state, 'count': count}
-        for state, count in sorted(state_counts.items(), key=lambda item: (-item[1], item[0]))[:6]
+        {
+            'state': profile['state'],
+            'count': profile['activity'],
+            'companies': profile['companies'],
+            'sites': profile['sites'],
+        }
+        for profile in sorted(
+            state_profiles.values(),
+            key=lambda item: (-item['activity'], item['state']),
+        )[:6]
     ]
     return {
         'markers': markers,
         'summary': {
-            'companies': len(filtered_companies),
-            'sites': len(filtered_sites),
+            'companies': len(mapped_companies),
+            'sites': len(mapped_sites),
             'markers': len(markers),
             'high_priority': len([
-                company for company in filtered_companies
+                company for company in mapped_companies
                 if safe_score(company.get('priority_score', 0)) >= 80
             ]),
             'ready_sites': len([
-                site for site in filtered_sites
+                site for site in mapped_sites
                 if site.get('research_readiness', {}).get('score', 0) >= 70
             ]),
             'states': len(state_counts),
+            'baseline_companies': len(companies),
+            'baseline_sites': len(sites),
+            'baseline_nodes': len(companies) + len(sites),
+            'active_filters': len(active_filters),
         },
+        'filter_context': {
+            'active_labels': active_filters,
+            'has_filters': bool(active_filters),
+            'state': filters.get('state') or '',
+            'node_types': sorted(visible_node_types),
+        },
+        'state_profiles': state_profiles,
         'state_counts': dict(sorted(state_counts.items())),
         'top_states': top_states,
         'type_counts': type_counts,
@@ -1136,7 +1334,13 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             'opportunity_map.html',
             map_data=map_data,
             filters=filters,
-            filter_options=build_map_filter_options(companies, sites, chains),
+            filter_options=build_map_filter_options(
+                companies,
+                sites,
+                chains,
+                rail_infrastructure=rail_infrastructure,
+                review_store_path=app.config['OMNIMAPPING_REVIEW_STORE'],
+            ),
         )
 
     @app.route('/sites')

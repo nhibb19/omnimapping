@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Opportunity Map - OmniMapping{% endblock %}
+{% block title %}Map - OmniMapping{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <div class="page-kicker">Geographic Opportunity View</div>
-    <h1>Opportunity Map</h1>
-    <p class="summary-note">{{ map_data.summary.markers }} mapped nodes from {{ map_data.summary.companies }} companies and {{ map_data.summary.sites }} industrial sites. Use the filters to scan concentrations, then jump into the working views.</p>
+    <div class="page-kicker">Geographic Workspace</div>
+    <h1>Map</h1>
+    <p class="summary-note">{{ map_data.summary.markers }} visible nodes, including {{ map_data.type_counts.company }} companies and {{ map_data.type_counts.site }} industrial sites. Filter the market, inspect dense areas, and jump into the next workflow.</p>
   </div>
   <div class="actions">
     <a class="button" href="{{ url_for('companies') }}">Ranked Companies</a>
@@ -15,9 +15,10 @@
 
 <section class="filters map-filters">
   <form method="get" action="{{ url_for('opportunity_map') }}">
+    <input type="hidden" name="layers_submitted" value="1">
     <div class="map-filter-block">
       <div class="filter-group-head">
-        <h2>Opportunity Filters</h2>
+        <h2>Filters</h2>
       </div>
       <div class="map-filter-grid">
         <div class="map-filter-wide">
@@ -78,7 +79,7 @@
           </select>
         </div>
         <div>
-          <label for="source_confidence">Confidence</label>
+          <label for="source_confidence">Site/rail confidence</label>
           <select id="source_confidence" name="source_confidence">
             <option value="">All confidence</option>
             {% for confidence in filter_options.source_confidences %}
@@ -90,7 +91,7 @@
     </div>
     <div class="map-filter-block map-layer-block">
       <div class="filter-group-head">
-        <h2>Map Layers</h2>
+        <h2>Layers</h2>
       </div>
       <div class="checkbox-row map-layer-row">
         {% for node_type in filter_options.node_types %}
@@ -108,24 +109,63 @@
   </form>
 </section>
 
-<section class="scan-strip" aria-label="Map scan summary">
-  <div class="scan-item positive"><span class="muted">High priority</span><strong>{{ map_data.summary.high_priority }}</strong></div>
-  <div class="scan-item review"><span class="muted">Ready sites</span><strong>{{ map_data.summary.ready_sites }}</strong></div>
-  <div class="scan-item info"><span class="muted">States</span><strong>{{ map_data.summary.states }}</strong></div>
-  <div class="scan-item"><span class="muted">Mapped nodes</span><strong>{{ map_data.summary.markers }}</strong></div>
+<section class="map-result-summary" aria-label="Filtered map result summary">
+  <div>
+    <div class="page-kicker">{{ 'Filtered Result' if map_data.filter_context.has_filters else 'National View' }}</div>
+    <h2>
+      {% if map_data.summary.states %}
+        {{ map_data.summary.markers }} mapped nodes across {{ map_data.summary.states }} states
+      {% elif map_data.summary.markers %}
+        {{ map_data.summary.markers }} visible context nodes
+      {% else %}
+        No mapped nodes
+      {% endif %}
+    </h2>
+    <p class="summary-note">
+      Visible layers show {{ map_data.type_counts.company or 0 }} company markers and {{ map_data.type_counts.site or 0 }} site markers after the active filters and selected layers are applied.
+      {% if map_data.summary.markers == 0 %}No map nodes match these filters; broaden a filter or turn another layer back on.{% endif %}
+    </p>
+  </div>
+  <div class="active-filter-list">
+    {% if map_data.filter_context.active_labels %}
+      {% for label in map_data.filter_context.active_labels %}
+        <span class="pill filter-pill">{{ label }}</span>
+      {% endfor %}
+    {% else %}
+      <span class="pill neutral">Companies + sites</span>
+      <span class="pill neutral">No filters applied</span>
+    {% endif %}
+  </div>
 </section>
 
-<div class="map-legend" aria-label="Map marker legend">
-  <span class="legend-item"><span class="legend-dot"></span>Company <strong>{{ map_data.type_counts.company or 0 }}</strong></span>
-  <span class="legend-item"><span class="legend-dot site"></span>Site <strong>{{ map_data.type_counts.site or 0 }}</strong></span>
-  <span class="legend-item"><span class="legend-dot rail"></span>Rail / transload <strong>{{ map_data.type_counts.rail or 0 }}</strong></span>
-  <span class="legend-item"><span class="legend-dot port"></span>Port <strong>{{ map_data.type_counts.port or 0 }}</strong></span>
-</div>
-
 <section class="map-layout">
-  <div class="map-shell" id="opportunity-map" aria-label="Interactive opportunity map">
-    <span class="map-axis-label nw">Pacific / Mountain</span>
-    <span class="map-axis-label se">Southeast / Gulf / Atlantic</span>
+  <div class="map-shell" id="opportunity-map" aria-label="Interactive United States opportunity map">
+    <div class="map-toolbar" aria-label="Opportunity map view controls">
+      <div class="segmented-control" role="group" aria-label="State shading">
+        <button type="button" class="active" data-map-view="priority">Score</button>
+        <button type="button" data-map-view="readiness">Readiness</button>
+        <button type="button" data-map-view="activity">Activity</button>
+      </div>
+      <div class="segmented-control" role="group" aria-label="Map focus">
+        <button type="button" class="active" data-map-fit="results">Fit Results</button>
+        <button type="button" data-map-fit="national">US View</button>
+      </div>
+      <div class="map-scale" id="map-scale" aria-label="Map scale">
+        <span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+    <svg class="us-map" id="us-map" viewBox="0 0 1000 620" role="img" aria-label="United States map shaded by opportunity">
+      <rect class="map-water" width="1000" height="620"></rect>
+      <g class="map-inset-frame">
+        <rect x="60" y="500" width="215" height="92" rx="6"></rect>
+        <text x="72" y="520">Alaska</text>
+        <rect x="302" y="515" width="130" height="66" rx="6"></rect>
+        <text x="314" y="535">Hawaii</text>
+      </g>
+      <g id="state-layer"></g>
+    </svg>
+    <div class="marker-layer" id="marker-layer" aria-hidden="false"></div>
+    <div class="map-loading" id="map-loading">Loading US map geography...</div>
     <article class="map-popup" id="map-popup" hidden>
       <div class="map-popup-head">
         <div>
@@ -141,13 +181,20 @@
       <ul id="map-popup-details"></ul>
       <div class="map-popup-actions" id="map-popup-actions"></div>
     </article>
+    <div class="map-legend" aria-label="Map marker legend">
+      <span class="legend-item"><span class="legend-dot"></span>Company <strong>{{ map_data.type_counts.company or 0 }}</strong></span>
+      <span class="legend-item"><span class="legend-dot site"></span>Site <strong>{{ map_data.type_counts.site or 0 }}</strong></span>
+      <span class="legend-item"><span class="legend-dot rail"></span>Rail <strong>{{ map_data.type_counts.rail or 0 }}</strong></span>
+      <span class="legend-item"><span class="legend-dot port"></span>Port <strong>{{ map_data.type_counts.port or 0 }}</strong></span>
+      <span class="legend-item"><span class="cluster-swatch">8</span>Cluster</span>
+    </div>
   </div>
 
   <aside class="map-side-panel">
     <section class="section selected-node-card" id="selected-node-card">
       <div class="section-head">
         <div>
-          <h2>Selected Node</h2>
+          <h2>Inspect</h2>
           <p class="summary-note" id="selected-node-subtitle">Pick a marker or list item to plan the next move.</p>
         </div>
       </div>
@@ -166,7 +213,7 @@
     <section class="section map-intel-panel">
       <div class="section-head">
         <div>
-          <h2>Map Intelligence</h2>
+          <h2>Insights</h2>
           <p class="summary-note">Where the filtered opportunity set is concentrating.</p>
         </div>
       </div>
@@ -188,16 +235,14 @@
       {% endif %}
     </section>
 
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <h2>Opportunity Nodes</h2>
-          <p class="summary-note">Sorted by opportunity signal, with companies first.</p>
-        </div>
-      </div>
+    <details class="section map-node-drawer">
+      <summary>
+      <span>Visible Nodes</span>
+        <strong>{{ map_data.markers|length }}</strong>
+      </summary>
       {% if map_data.markers %}
         <div class="map-list">
-          {% for marker in map_data.markers[:80] %}
+          {% for marker in map_data.markers[:30] %}
             <div class="map-list-item" data-marker-card="{{ marker.id }}">
               <button type="button" data-focus-marker="{{ marker.id }}">{{ marker.label }}</button>
               <div class="subtle">{{ marker.type|title }} | {{ marker.subtitle }}</div>
@@ -214,13 +259,33 @@
           <div>Try broadening the state, score, confidence, or node-type filters.</div>
         </div>
       {% endif %}
-    </section>
+    </details>
   </aside>
 </section>
 
 <script>
-  const mapMarkers = {{ map_data.markers|tojson }};
-  const mapElement = document.getElementById('opportunity-map');
+  const mapMarkers = {{ map_data.markers|tojson }}
+    .filter((marker) => Number.isFinite(Number(marker.lat)) && Number.isFinite(Number(marker.lon)))
+    .map((marker, index) => ({
+      ...marker,
+      id: marker.id || `map-node-${index}`,
+      type: marker.type || 'node',
+      label: marker.label || 'Mapped node',
+      tone: marker.tone || 'neutral',
+      tone_label: marker.tone_label || 'Mapped node',
+      score: Number.isFinite(Number(marker.score)) ? Number(marker.score) : null,
+      size: Number.isFinite(Number(marker.size)) ? Number(marker.size) : 14,
+      details: Array.isArray(marker.details) ? marker.details : [],
+      links: Array.isArray(marker.links) ? marker.links : [],
+    }));
+  const stateProfiles = {{ map_data.state_profiles|tojson }};
+  const filterContext = {{ map_data.filter_context|tojson }};
+  const statesGeojsonUrl = "{{ url_for('static', filename='data/us-states.geojson') }}";
+  const usMap = document.getElementById('us-map');
+  const stateLayer = document.getElementById('state-layer');
+  const markerLayer = document.getElementById('marker-layer');
+  const mapLoading = document.getElementById('map-loading');
+  const mapScale = document.getElementById('map-scale');
   const popup = document.getElementById('map-popup');
   const popupTitle = document.getElementById('map-popup-title');
   const popupSubtitle = document.getElementById('map-popup-subtitle');
@@ -239,16 +304,159 @@
   const selectedNodeActions = document.getElementById('selected-node-actions');
   const markerButtons = new Map();
   const markerCards = new Map();
-  const bounds = { minLon: -125, maxLon: -66, minLat: 24, maxLat: 50 };
+  const statePaths = new Map();
+  let selectedMarkerId = null;
+  let activeView = 'priority';
+  let currentViewBox = { x: 0, y: 0, width: 1000, height: 620 };
+  const nationalViewBox = { x: 0, y: 0, width: 1000, height: 620 };
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
 
+  function projectPoint(lon, lat) {
+    const numberLon = Number(lon);
+    const numberLat = Number(lat);
+    if (numberLon < -130) {
+      return {
+        x: clamp(72 + (numberLon + 170) * 4.8, 66, 268),
+        y: clamp(584 - (numberLat - 51) * 4.15, 506, 588),
+      };
+    }
+    if (numberLat < 24 && numberLon < -145) {
+      return {
+        x: clamp(315 + (numberLon + 161) * 14, 310, 425),
+        y: clamp(573 - (numberLat - 18) * 10, 522, 576),
+      };
+    }
+    return {
+      x: clamp(86 + ((numberLon + 125) / 59) * 844, 68, 948),
+      y: clamp(76 + ((50 - numberLat) / 26) * 423, 62, 508),
+    };
+  }
+
   function projectMarker(marker) {
-    const x = ((marker.lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * 100;
-    const y = ((bounds.maxLat - marker.lat) / (bounds.maxLat - bounds.minLat)) * 100;
-    return { x: clamp(x, 3, 97), y: clamp(y, 4, 96) };
+    return projectPoint(marker.lon, marker.lat);
+  }
+
+  function scoreLabel(marker) {
+    return Number.isFinite(marker.score) ? `${marker.score}/100` : 'Unscored';
+  }
+
+  function viewPosition(point) {
+    return {
+      left: `${((point.x - currentViewBox.x) / currentViewBox.width) * 100}%`,
+      top: `${((point.y - currentViewBox.y) / currentViewBox.height) * 100}%`,
+    };
+  }
+
+  function setMapViewBox(box) {
+    currentViewBox = {
+      x: clamp(box.x, 0, 1000),
+      y: clamp(box.y, 0, 620),
+      width: clamp(box.width, 120, 1000),
+      height: clamp(box.height, 90, 620),
+    };
+    if (currentViewBox.x + currentViewBox.width > 1000) currentViewBox.x = 1000 - currentViewBox.width;
+    if (currentViewBox.y + currentViewBox.height > 620) currentViewBox.y = 620 - currentViewBox.height;
+    usMap.setAttribute(
+      'viewBox',
+      `${currentViewBox.x.toFixed(1)} ${currentViewBox.y.toFixed(1)} ${currentViewBox.width.toFixed(1)} ${currentViewBox.height.toFixed(1)}`
+    );
+    renderMarkers();
+  }
+
+  function boundsForMarkers(markers, padding = 70) {
+    if (!markers.length) return nationalViewBox;
+    const points = markers.map((marker) => marker.projected || projectMarker(marker));
+    const minX = Math.min(...points.map((point) => point.x));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxY = Math.max(...points.map((point) => point.y));
+    const width = Math.max(170, maxX - minX + padding * 2);
+    const height = Math.max(130, maxY - minY + padding * 2);
+    return {
+      x: minX - padding,
+      y: minY - padding,
+      width,
+      height,
+    };
+  }
+
+  function fitToResults() {
+    const opportunityMarkers = mapMarkers.filter((marker) => marker.type === 'company' || marker.type === 'site');
+    setMapViewBox(boundsForMarkers(opportunityMarkers.length ? opportunityMarkers : mapMarkers, filterContext.has_filters ? 85 : 120));
+    setFitControl('results');
+  }
+
+  function setFitControl(mode) {
+    document.querySelectorAll('[data-map-fit]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.mapFit === mode);
+    });
+  }
+
+  function ringPath(coordinates) {
+    return coordinates.map((point, index) => {
+      const projected = projectPoint(point[0], point[1]);
+      return `${index === 0 ? 'M' : 'L'}${projected.x.toFixed(1)},${projected.y.toFixed(1)}`;
+    }).join(' ') + ' Z';
+  }
+
+  function featurePath(feature) {
+    const geometry = feature.geometry || {};
+    if (geometry.type === 'Polygon') {
+      return geometry.coordinates.map(ringPath).join(' ');
+    }
+    if (geometry.type === 'MultiPolygon') {
+      return geometry.coordinates.flatMap((polygon) => polygon.map(ringPath)).join(' ');
+    }
+    return '';
+  }
+
+  function stateProfileForFeature(feature) {
+    const name = feature.properties && feature.properties.name;
+    return Object.values(stateProfiles).find((profile) => profile.name === name) || null;
+  }
+
+  function metricForProfile(profile, view) {
+    if (!profile) return 0;
+    if (view === 'readiness') return profile.readiness || 0;
+    if (view === 'activity') return Math.min(100, (profile.activity || 0) * 14);
+    return profile.avg_priority || profile.top_score || 0;
+  }
+
+  function stateClassForMetric(metric) {
+    if (metric >= 80) return 'state-strong';
+    if (metric >= 60) return 'state-workable';
+    if (metric > 0) return 'state-watch';
+    return 'state-empty';
+  }
+
+  function stateLabel(profile, view) {
+    if (!profile) return 'No mapped opportunity data';
+    if (view === 'readiness') return `${profile.ready_sites} ready sites across ${profile.sites} mapped sites`;
+    if (view === 'activity') return `${profile.activity} mapped opportunities (${profile.companies} companies, ${profile.sites} sites)`;
+    return profile.companies ? `Average priority ${profile.avg_priority}/100` : `Best site readiness ${profile.top_score}/100`;
+  }
+
+  function updateStateShading(view) {
+    activeView = view;
+    statePaths.forEach(({ path, profile }) => {
+      const metric = metricForProfile(profile, activeView);
+      const selected = filterContext.state && profile && profile.state === filterContext.state;
+      path.setAttribute('class', `state-shape ${stateClassForMetric(metric)}${selected ? ' state-selected' : ''}${profile ? '' : ' state-muted'}`);
+      path.dataset.metric = metric;
+      path.setAttribute('aria-label', `${path.dataset.stateName}: ${stateLabel(profile, activeView)}`);
+    });
+    const scaleLabels = activeView === 'activity'
+      ? ['None', 'Light', 'Active', 'Dense']
+      : ['None', 'Watch', 'Workable', 'Strong'];
+    mapScale.querySelectorAll('span').forEach((span, index) => {
+      span.textContent = scaleLabels[index] || '';
+    });
+    document.querySelectorAll('[data-map-view]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.mapView === activeView);
+    });
   }
 
   function spreadProjectedMarkers(markers) {
@@ -269,16 +477,38 @@
         const angle = (Math.PI * 2 * index) / items.length;
         const radius = Math.min(5, 1.5 + items.length * 0.35);
         item.marker.projected = {
-          x: clamp(item.projected.x + Math.cos(angle) * radius, 3, 97),
-          y: clamp(item.projected.y + Math.sin(angle) * radius, 4, 96),
+          x: clamp(item.projected.x + Math.cos(angle) * radius, 28, 972),
+          y: clamp(item.projected.y + Math.sin(angle) * radius, 32, 590),
         };
       });
     });
   }
 
+  function clusterMarkers(markers) {
+    const clustered = [];
+    const remaining = markers.map((marker) => ({ marker, point: marker.projected || projectMarker(marker) }));
+    const threshold = filterContext.has_filters ? 48 : 34;
+    while (remaining.length) {
+      const seed = remaining.shift();
+      const group = [seed];
+      for (let index = remaining.length - 1; index >= 0; index -= 1) {
+        const candidate = remaining[index];
+        const dx = ((candidate.point.x - seed.point.x) / currentViewBox.width) * 1000;
+        const dy = ((candidate.point.y - seed.point.y) / currentViewBox.height) * 620;
+        if (Math.hypot(dx, dy) <= threshold) {
+          group.push(candidate);
+          remaining.splice(index, 1);
+        }
+      }
+      clustered.push(group);
+    }
+    return clustered;
+  }
+
   function renderActions(container, marker) {
     container.innerHTML = '';
-    marker.links.forEach((link) => {
+    (marker.links || []).forEach((link) => {
+      if (!link || !link.url || !link.label) return;
       const anchor = document.createElement('a');
       anchor.className = 'button small';
       anchor.href = link.url;
@@ -287,20 +517,53 @@
     });
   }
 
-  function showMarker(marker) {
+  function clearSelection() {
+    selectedMarkerId = null;
+    popup.hidden = true;
     markerButtons.forEach((button) => button.classList.remove('active'));
+    document.querySelectorAll('.map-cluster.active').forEach((button) => button.classList.remove('active'));
+    markerCards.forEach((card) => card.classList.remove('active'));
+    selectedNodeEmpty.hidden = false;
+    selectedNodeContent.hidden = true;
+    selectedNodeSubtitle.textContent = 'Pick a marker or list item to plan the next move.';
+    selectedNodeTitle.textContent = '';
+    selectedNodeType.textContent = '';
+    selectedNodeScore.textContent = '';
+    selectedNodeNext.textContent = '';
+    selectedNodeActions.innerHTML = '';
+  }
+
+  function showStateHint(profile) {
+    if (!profile || selectedMarkerId || !selectedNodeContent.hidden) return;
+    selectedNodeSubtitle.textContent = `${profile.name}: ${stateLabel(profile, activeView)}`;
+  }
+
+  function activateMarkerSelection(marker) {
+    selectedMarkerId = marker.id;
+    markerButtons.forEach((button) => button.classList.remove('active'));
+    document.querySelectorAll('.map-cluster.active').forEach((button) => button.classList.remove('active'));
     markerCards.forEach((card) => card.classList.remove('active'));
     const button = markerButtons.get(marker.id);
     if (button) button.classList.add('active');
+    if (!button) {
+      document.querySelectorAll('.map-cluster').forEach((clusterButton) => {
+        const memberIds = (clusterButton.dataset.memberIds || '').split(',');
+        if (memberIds.includes(marker.id)) clusterButton.classList.add('active');
+      });
+    }
     const card = markerCards.get(marker.id);
     if (card) card.classList.add('active');
+  }
 
-    popupTitle.textContent = marker.label;
+  function showMarker(marker) {
+    activateMarkerSelection(marker);
+
+    popupTitle.textContent = marker.label || 'Mapped node';
     popupSubtitle.textContent = marker.subtitle || '';
-    popupType.textContent = marker.type;
-    popupScore.textContent = `${marker.score}/100`;
+    popupType.textContent = marker.type || 'node';
+    popupScore.textContent = scoreLabel(marker);
     popupDetails.innerHTML = '';
-    marker.details.forEach((detail) => {
+    (marker.details || []).forEach((detail) => {
       if (!detail || detail.endsWith(': ')) return;
       const item = document.createElement('li');
       item.textContent = detail;
@@ -311,34 +574,149 @@
 
     selectedNodeEmpty.hidden = true;
     selectedNodeContent.hidden = false;
-    selectedNodeTitle.textContent = marker.label;
+    selectedNodeTitle.textContent = marker.label || 'Mapped node';
     selectedNodeSubtitle.textContent = marker.subtitle || 'Mapped opportunity context';
-    selectedNodeType.textContent = marker.type;
-    selectedNodeScore.textContent = `${marker.score}/100`;
+    selectedNodeType.textContent = marker.type || 'node';
+    selectedNodeScore.textContent = scoreLabel(marker);
     selectedNodeNext.textContent = marker.next_step || 'Open the matching workflow to continue qualification.';
     renderActions(selectedNodeActions, marker);
   }
 
-  spreadProjectedMarkers(mapMarkers);
+  function showCluster(items, clusterButton = null) {
+    selectedMarkerId = null;
+    markerButtons.forEach((button) => button.classList.remove('active'));
+    document.querySelectorAll('.map-cluster.active').forEach((button) => button.classList.remove('active'));
+    markerCards.forEach((card) => card.classList.remove('active'));
+    if (clusterButton) clusterButton.classList.add('active');
+    const markers = items.map((item) => item.marker);
+    const sorted = markers.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+    popupTitle.textContent = `${markers.length} mapped nodes`;
+    popupSubtitle.textContent = sorted.slice(0, 3).map((marker) => marker.label).join(', ');
+    popupType.textContent = 'cluster';
+    popupScore.textContent = `${Math.round(sorted.reduce((sum, marker) => sum + (marker.score || 0), 0) / markers.length)}/100 avg`;
+    popupDetails.innerHTML = '';
+    sorted.slice(0, 6).forEach((marker) => {
+      const item = document.createElement('li');
+      item.textContent = `${marker.label} (${marker.type}, ${scoreLabel(marker)})`;
+      popupDetails.appendChild(item);
+    });
+    popupActions.innerHTML = '';
+    const zoomButton = document.createElement('button');
+    zoomButton.className = 'button small';
+    zoomButton.type = 'button';
+    zoomButton.textContent = 'Focus Cluster';
+    zoomButton.addEventListener('click', () => {
+      setMapViewBox(boundsForMarkers(markers, 45));
+      setFitControl('results');
+    });
+    popupActions.appendChild(zoomButton);
+    const topMarker = sorted[0];
+    if (topMarker) {
+      const inspectButton = document.createElement('button');
+      inspectButton.className = 'button small';
+      inspectButton.type = 'button';
+      inspectButton.textContent = 'Inspect Top Node';
+      inspectButton.addEventListener('click', () => showMarker(topMarker));
+      popupActions.appendChild(inspectButton);
+    }
+    popup.hidden = false;
 
-  mapMarkers.forEach((marker) => {
-    const projected = marker.projected || projectMarker(marker);
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `map-marker ${marker.type} ${marker.tone}`;
-    button.id = marker.id;
-    button.style.left = `${projected.x}%`;
-    button.style.top = `${projected.y}%`;
-    button.style.setProperty('--marker-size', `${marker.size}px`);
-    button.setAttribute('aria-label', `${marker.type}: ${marker.label}`);
-    button.title = `${marker.label} | ${marker.tone_label || marker.type} | ${marker.score}/100`;
-    const glyph = document.createElement('span');
-    glyph.textContent = marker.type === 'company' ? 'C' : marker.type === 'site' ? 'S' : marker.type === 'rail' ? 'R' : 'P';
-    button.appendChild(glyph);
-    button.addEventListener('click', () => showMarker(marker));
-    markerButtons.set(marker.id, button);
-    mapElement.appendChild(button);
-  });
+    selectedNodeEmpty.hidden = true;
+    selectedNodeContent.hidden = false;
+    selectedNodeTitle.textContent = `${markers.length} nodes in this area`;
+    selectedNodeSubtitle.textContent = 'Clustered map result';
+    selectedNodeType.textContent = [...new Set(markers.map((marker) => marker.type))].join(', ');
+    selectedNodeScore.textContent = `${markers.length} nodes`;
+    selectedNodeNext.textContent = 'Focus the cluster to separate nearby companies, sites, and infrastructure context.';
+    selectedNodeActions.innerHTML = '';
+    selectedNodeActions.appendChild(zoomButton.cloneNode(true));
+    selectedNodeActions.lastChild.addEventListener('click', () => {
+      setMapViewBox(boundsForMarkers(markers, 45));
+      setFitControl('results');
+    });
+  }
+
+  function renderMarkers() {
+    markerLayer.innerHTML = '';
+    markerButtons.clear();
+    spreadProjectedMarkers(mapMarkers);
+    clusterMarkers(mapMarkers).forEach((items) => {
+      if (items.length > 1) {
+        const x = items.reduce((sum, item) => sum + item.point.x, 0) / items.length;
+        const y = items.reduce((sum, item) => sum + item.point.y, 0) / items.length;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'map-cluster';
+        if (selectedMarkerId && items.some((item) => item.marker.id === selectedMarkerId)) {
+          button.classList.add('active');
+        }
+        button.dataset.memberIds = items.map((item) => item.marker.id).join(',');
+        const position = viewPosition({ x, y });
+        button.style.left = position.left;
+        button.style.top = position.top;
+        button.textContent = items.length;
+        button.title = `${items.length} mapped nodes in this area`;
+        button.setAttribute('aria-label', `${items.length} mapped nodes clustered here`);
+        button.addEventListener('click', () => showCluster(items, button));
+        markerLayer.appendChild(button);
+        return;
+      }
+      const marker = items[0].marker;
+      const projected = marker.projected || projectMarker(marker);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('class', `map-marker ${marker.type} ${marker.tone}`);
+      button.id = marker.id;
+      const position = viewPosition(projected);
+      button.style.left = position.left;
+      button.style.top = position.top;
+      button.style.setProperty('--marker-size', `${marker.size}px`);
+      button.setAttribute('aria-label', `${marker.type}: ${marker.label}`);
+      button.title = `${marker.label} | ${marker.tone_label || marker.type} | ${scoreLabel(marker)}`;
+      const glyph = document.createElement('span');
+      glyph.textContent = marker.type === 'company' ? 'C' : marker.type === 'site' ? 'S' : marker.type === 'rail' ? 'R' : 'P';
+      button.appendChild(glyph);
+      button.addEventListener('click', () => showMarker(marker));
+      if (selectedMarkerId === marker.id) button.classList.add('active');
+      markerButtons.set(marker.id, button);
+      markerLayer.appendChild(button);
+    });
+  }
+
+  async function renderStates() {
+    try {
+      const response = await fetch(statesGeojsonUrl);
+      if (!response.ok) throw new Error('US state geography unavailable');
+      const geojson = await response.json();
+      geojson.features.forEach((feature) => {
+        const pathData = featurePath(feature);
+        if (!pathData) return;
+        const profile = stateProfileForFeature(feature);
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', pathData);
+        path.dataset.stateName = feature.properties.name;
+        path.dataset.state = profile ? profile.state : '';
+        path.setAttribute('tabindex', '0');
+        path.addEventListener('mouseenter', () => showStateHint(profile));
+        path.addEventListener('focus', () => showStateHint(profile));
+        stateLayer.appendChild(path);
+        statePaths.set(feature.properties.name, { path, profile });
+      });
+      updateStateShading(activeView);
+      mapLoading.hidden = true;
+    } catch (error) {
+      mapLoading.textContent = 'US map geography could not load. Opportunity markers are still available.';
+    }
+  }
+
+  renderStates();
+  spreadProjectedMarkers(mapMarkers);
+  if (filterContext.has_filters && mapMarkers.length) {
+    fitToResults();
+  } else {
+    setMapViewBox(nationalViewBox);
+    setFitControl('national');
+  }
 
   document.querySelectorAll('[data-focus-marker]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -347,18 +725,25 @@
     });
   });
 
+  document.querySelectorAll('[data-map-view]').forEach((button) => {
+    button.addEventListener('click', () => updateStateShading(button.dataset.mapView));
+  });
+
+  document.querySelectorAll('[data-map-fit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (button.dataset.mapFit === 'national') {
+        setMapViewBox(nationalViewBox);
+        setFitControl('national');
+      } else {
+        fitToResults();
+      }
+    });
+  });
+
   document.querySelectorAll('[data-marker-card]').forEach((card) => {
     markerCards.set(card.dataset.markerCard, card);
   });
 
-  closePopup.addEventListener('click', () => {
-    popup.hidden = true;
-    markerButtons.forEach((button) => button.classList.remove('active'));
-    markerCards.forEach((card) => card.classList.remove('active'));
-  });
-
-  if (mapMarkers.length) {
-    showMarker(mapMarkers[0]);
-  }
+  closePopup.addEventListener('click', clearSelection);
 </script>
 {% endblock %}
