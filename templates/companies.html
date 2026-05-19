@@ -64,7 +64,9 @@
 
 <section class="scan-strip" aria-label="Company scan summary">
   <div class="scan-item positive"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_for_outreach }}</strong></div>
-  <div class="scan-item review"><span class="muted">Need site review</span><strong>{{ scan_summary.needs_site_review }}</strong></div>
+  <div class="scan-item review"><span class="muted">Verify site first</span><strong>{{ scan_summary.verify_site_first }}</strong></div>
+  <div class="scan-item warning"><span class="muted">Compare sites</span><strong>{{ scan_summary.needs_site_review }}</strong></div>
+  <div class="scan-item review"><span class="muted">Qualify fit</span><strong>{{ scan_summary.qualify_fit }}</strong></div>
   <div class="scan-item info"><span class="muted">Average priority</span><strong>{{ scan_summary.average_priority }}</strong></div>
   <div class="scan-item"><span class="muted">Shown now</span><strong>{{ companies|length }}</strong></div>
 </section>
@@ -116,9 +118,14 @@
           </td>
           <td class="wide-cell">
             <span class="mobile-label">Next Action</span>
-            {{ company.recommended_next_action }}
+            <div class="pill-row status-line">
+              <span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span>
+            </div>
+            {{ company.readiness_next_action or company.recommended_next_action }}
             {% if not company.best_site_name %}
               <span class="subtle">Data gap: confirm best-fit site before outreach.</span>
+            {% elif company.opportunity_readiness and not company.opportunity_readiness.site_ready %}
+              <span class="subtle">{{ company.opportunity_readiness.reason }}</span>
             {% endif %}
           </td>
           <td class="action-cell">

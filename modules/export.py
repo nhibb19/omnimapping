@@ -755,14 +755,19 @@ def build_site_directory(sites):
             'state': site.get('state', ''),
             'acres': site.get('acres', ''),
             'rail_served': site.get('rail_served', ''),
+            'nearby_class1': site.get('nearby_class1', ''),
             'transload_available': site.get('transload_available', ''),
+            'interstate_access': site.get('interstate_access', ''),
             'port_access': site.get('port_access', ''),
             'target_industries': site.get('target_industries', ''),
+            'source_url': site.get('source_url', ''),
             'source_confidence': site.get('source_confidence', ''),
             'last_verified': site.get('last_verified', ''),
             'data_gap_notes': site.get('data_gap_notes', ''),
             'data_quality_flags': site.get('data_quality_flags', []),
             'needs_confirmation': bool(site.get('needs_confirmation')),
+            'latitude': site.get('latitude', ''),
+            'longitude': site.get('longitude', ''),
         })
 
     directory.sort(key=lambda item: item['site_name'])

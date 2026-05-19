@@ -79,7 +79,7 @@
 </section>
 
 <section class="scan-strip" aria-label="Site scan summary">
-  <div class="scan-item positive"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_sites }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Research-ready sites</span><strong>{{ scan_summary.ready_sites }}</strong></div>
   <div class="scan-item review"><span class="muted">Review queue</span><strong>{{ scan_summary.review_queue }}</strong></div>
   <div class="scan-item warning"><span class="muted">Blocked</span><strong>{{ scan_summary.blocked }}</strong></div>
   <div class="scan-item info"><span class="muted">Need confirmation</span><strong>{{ scan_summary.needs_confirmation }}</strong></div>
@@ -122,7 +122,7 @@
             {% if site.reviewed_by or site.reviewed_at %}
               <span class="subtle">{{ site.reviewed_by or 'Reviewed' }}{% if site.reviewed_at %} | {{ site.reviewed_at }}{% endif %}</span>
             {% elif site.ready_for_outreach %}
-              <span class="subtle">Ready for outreach</span>
+              <span class="subtle">Site verified</span>
             {% else %}
               <span class="subtle">Awaiting validation</span>
             {% endif %}

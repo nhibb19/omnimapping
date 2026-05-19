@@ -31,6 +31,11 @@ from dashboard import (
     unique_sorted,
 )
 from modules.data_quality import build_research_readiness
+from modules.opportunity_readiness import (
+    READY_LABEL,
+    VERIFY_SITE_LABEL,
+    build_opportunity_readiness,
+)
 from modules.export import build_site_directory
 from modules.review import (
     build_review_update,
@@ -212,7 +217,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual([company['company'] for company in filtered], ['Acme Chemicals'])
 
         summary = build_company_scan_summary(filtered)
-        self.assertEqual(summary['ready_for_outreach'], 1)
+        self.assertEqual(summary['ready_for_outreach'], 0)
+        self.assertEqual(summary['verify_site_first'], 1)
 
     def test_opportunity_map_payload_derives_nodes_and_filters(self):
         _, companies, sites, rail_infrastructure = self.loaded_data
@@ -247,7 +253,150 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(map_data['top_opportunities'][0]['label'], 'Acme Chemicals')
         self.assertEqual(map_data['top_states'][0]['state'], 'TX')
         self.assertEqual(map_data['top_states'][0]['count'], 2)
+        self.assertEqual(map_data['territory_plays'][0]['territory'], 'TX')
+        self.assertEqual(map_data['territory_plays'][0]['top_company'], 'Acme Chemicals')
+        self.assertEqual(map_data['territory_plays'][0]['top_site'], 'Houston Rail Park')
+        self.assertEqual(map_data['territory_plays'][0]['company_details'][0]['company'], 'Acme Chemicals')
+        self.assertEqual(map_data['territory_plays'][0]['company_details'][0]['matched_site'], 'Houston Rail Park')
         self.assertIn('State: TX', map_data['filter_context']['active_labels'])
+
+    def test_opportunity_map_action_plan_includes_workflow_links(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        ready_sites = [
+            {
+                **site,
+                'source_url': 'https://example.com/owner-utilities-zoning',
+                'source_confidence': 'High',
+                'last_verified': '2026-05-09',
+                'data_gap_notes': '',
+            }
+            for site in sites
+        ]
+        with self.app.test_request_context('/map?node_type=company&node_type=site'):
+            map_data = build_opportunity_map(
+                companies,
+                ready_sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': '',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        plays_by_state = {play['territory']: play for play in map_data['territory_plays']}
+        tx_play = plays_by_state['TX']
+        self.assertIn('Acme Chemicals', tx_play['title'])
+        self.assertIn('Texas', tx_play['reason'])
+        self.assertEqual(tx_play['company_count'], 1)
+        self.assertEqual(tx_play['site_count'], 1)
+        self.assertGreater(tx_play['score'], 0)
+        self.assertEqual(tx_play['primary_action']['label'], 'Open Workspace')
+        self.assertEqual(tx_play['blocking_issue'], 'Priority, site fit, lane fit, and site readiness are aligned.')
+        self.assertEqual(tx_play['company_details'][0]['company'], 'Acme Chemicals')
+        self.assertEqual(tx_play['company_details'][0]['site_match_label'], 'Strong match')
+        self.assertIn(tx_play['company_details'][0]['site_readiness_label'], {'Research Ready', 'Needs Verification'})
+        self.assertEqual(tx_play['site_details'][0]['site_name'], 'Houston Rail Park')
+        link_labels = {link['label'] for link in tx_play['links']}
+        self.assertIn('View Company', link_labels)
+        self.assertIn('Compare Sites', link_labels)
+        self.assertIn('Open Workspace', link_labels)
+        self.assertIn('Review Site', link_labels)
+        link_urls = ' '.join(link['url'] for link in tx_play['links'])
+        self.assertIn('/companies/Acme%20Chemicals', link_urls)
+        self.assertIn('/companies/Acme%20Chemicals/site-comparison', link_urls)
+        self.assertIn('/workspace?company=Acme+Chemicals', link_urls)
+        self.assertIn('/sites/Houston%20Rail%20Park', link_urls)
+
+    def test_opportunity_map_action_plan_primary_action_changes_by_visible_layers(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        with self.app.test_request_context('/map?node_type=company'):
+            company_map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': 'TX',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        company_play = company_map_data['territory_plays'][0]
+        self.assertEqual(company_play['primary_action']['label'], 'View Company')
+        self.assertEqual(company_play['blocking_issue'], 'No visible site option')
+
+        with self.app.test_request_context('/map?node_type=site'):
+            site_map_data = build_opportunity_map(
+                companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': 'TX',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        site_play = site_map_data['territory_plays'][0]
+        self.assertEqual(site_play['primary_action']['label'], 'Review Site')
+        self.assertEqual(site_play['blocking_issue'], 'Site readiness needs review')
+
+    def test_opportunity_map_action_plan_uses_compare_sites_when_site_choice_needs_review(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        unmatched_companies = [
+            {**company, 'best_site_name': '', 'best_recommended_site': ''}
+            if company['company'] == 'Acme Chemicals' else company
+            for company in companies
+        ]
+
+        with self.app.test_request_context('/map?state=TX&node_type=company&node_type=site'):
+            map_data = build_opportunity_map(
+                unmatched_companies,
+                sites,
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': 'TX',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        tx_play = map_data['territory_plays'][0]
+        self.assertEqual(tx_play['primary_action']['label'], 'Compare Sites')
+        self.assertEqual(tx_play['company_details'][0]['watch_item'], 'No visible site option')
 
     def test_opportunity_map_segment_and_confidence_filters_apply_to_all_layers(self):
         _, companies, sites, rail_infrastructure = self.loaded_data
@@ -278,6 +427,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertNotIn('Denver Industrial Yard', labels)
         self.assertIn('Segment: Chemicals', map_data['filter_context']['active_labels'])
         self.assertIn('Site/rail confidence: Unspecified', map_data['filter_context']['active_labels'])
+        self.assertEqual([play['territory'] for play in map_data['territory_plays']], ['TX'])
+        self.assertEqual([detail['company'] for detail in map_data['territory_plays'][0]['company_details']], ['Acme Chemicals'])
+        self.assertEqual([detail['site_name'] for detail in map_data['territory_plays'][0]['site_details']], ['Houston Rail Park'])
 
         with self.app.test_request_context('/map?commodity=chemicals&node_type=company&node_type=site'):
             commodity_map_data = build_opportunity_map(
@@ -529,6 +681,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(map_data['summary']['markers'], 0)
         self.assertEqual(map_data['type_counts']['company'], 0)
         self.assertEqual(map_data['type_counts']['site'], 0)
+        self.assertEqual(map_data['territory_plays'], [])
         self.assertIn('Layers: none', map_data['filter_context']['active_labels'])
 
     def test_opportunity_map_port_context_requires_visible_company_layer(self):
@@ -588,6 +741,14 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertNotIn('Opportunity Map', body)
         self.assertIn('Filters', body)
         self.assertIn('Layers', body)
+        self.assertIn('Action Plan', body)
+        self.assertIn('Best territory plays from the current map view.', body)
+        self.assertIn('<details class="territory-play">', body)
+        self.assertIn('Top companies', body)
+        self.assertIn('Site readiness', body)
+        self.assertIn('Watch:', body)
+        self.assertIn('Primary: Review Site', body)
+        self.assertIn('Focus company', body)
         self.assertIn('Insights', body)
         self.assertIn('Top mapped opportunities', body)
         self.assertIn('Inspect', body)
@@ -603,7 +764,36 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Rail context', body)
         self.assertIn('/companies/Acme%20Chemicals/site-comparison', body)
         self.assertIn('/workspace?company=Acme+Chemicals', body)
+        self.assertIn('Review Site', body)
         self.assertIn('site=Houston+Rail+Park', body)
+
+    def test_home_redirects_to_map_workspace(self):
+        response = self.client.get('/')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/map')
+
+    def test_opportunity_map_apply_filters_query_changes_result_summary(self):
+        response = self.client.get('/map?layers_submitted=1&state=TX&node_type=company&node_type=site')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('State: TX', body)
+        self.assertIn('2 mapped nodes across 1 states', body)
+        self.assertIn('Visible layers show 1 company markers and 1 site markers', body)
+        self.assertIn('Coverage: 1 of 1 filtered companies mapped, and 1 of 1 filtered sites mapped.', body)
+        self.assertIn('value="TX" selected', body)
+        self.assertIn('value="company" checked', body)
+        self.assertIn('value="site" checked', body)
+        self.assertNotIn('Front Range Logistics', body)
+
+    def test_opportunity_map_route_empty_action_plan_renders_helpful_state(self):
+        response = self.client.get('/map?layers_submitted=1')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('No action plan yet.', body)
+        self.assertIn('Turn on company or site layers, or broaden filters, to see territory plays.', body)
 
     def test_company_detail_page_shows_priority_site_and_next_action(self):
         response = self.client.get('/companies/Acme%20Chemicals')
@@ -695,6 +885,77 @@ class TestOmniMappingDashboard(unittest.TestCase):
             item['label'] == 'Acreage confirmed' and item['confirmed']
             for item in readiness['checklist']
         ))
+
+    def test_unified_readiness_blocks_high_score_unverified_site(self):
+        _, companies, sites, _ = self.loaded_data
+        company = {**companies[0], 'priority_score': 95, 'best_site_match_score': 90, 'best_lane_score': 80}
+        readiness = build_opportunity_readiness(company, site=sites[0])
+
+        self.assertEqual(readiness['label'], VERIFY_SITE_LABEL)
+        self.assertFalse(readiness['actionable'])
+        self.assertFalse(readiness['site_ready'])
+
+    def test_unified_readiness_allows_confirmed_research_ready_site(self):
+        _, companies, sites, _ = self.loaded_data
+        site = {
+            **sites[0],
+            'source_url': 'https://example.com/site',
+            'source_confidence': 'High',
+            'last_verified': '2026-05-09',
+            'data_gap_notes': '',
+            'review_status': 'confirmed',
+            'review_notes': 'owner utilities zoning',
+        }
+        company = {**companies[0], 'priority_score': 95, 'best_site_match_score': 90, 'best_lane_score': 80}
+        readiness = build_opportunity_readiness(company, site=site)
+
+        self.assertEqual(readiness['label'], READY_LABEL)
+        self.assertTrue(readiness['actionable'])
+        self.assertTrue(readiness['site_ready'])
+
+    def test_opportunity_map_payload_reports_unmapped_records(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+        unmapped_company = {
+            **companies[0],
+            'company': 'Remote Unknown Works',
+            'city': 'No Such City',
+            'state': 'ZZ',
+            'latitude': '',
+            'longitude': '',
+        }
+        unmapped_site = {
+            **sites[0],
+            'site_name': 'Unmapped Industrial Site',
+            'city': 'No Such City',
+            'state': 'ZZ',
+            'latitude': '',
+            'longitude': '',
+        }
+
+        with self.app.test_request_context('/map?state=ZZ&node_type=company&node_type=site'):
+            map_data = build_opportunity_map(
+                [unmapped_company],
+                [unmapped_site],
+                rail_infrastructure,
+                {
+                    'query': '',
+                    'state': 'ZZ',
+                    'segment': '',
+                    'commodity': '',
+                    'min_score': None,
+                    'min_site_fit': None,
+                    'site_readiness': '',
+                    'source_confidence': '',
+                    'supply_chain': '',
+                    'node_types': ['company', 'site'],
+                },
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(map_data['summary']['unmapped_companies'], 1)
+        self.assertEqual(map_data['summary']['unmapped_sites'], 1)
+        self.assertEqual(map_data['summary']['unmapped_nodes'], 2)
+        self.assertEqual(map_data['markers'], [])
 
     def test_default_review_status_derives_from_confirmation_flag(self):
         _, _, sites, _ = self.loaded_data
@@ -788,6 +1049,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertGreater(workspace['site_match']['compatibility_score'], 0)
         self.assertIn('lane', workspace)
         self.assertIn('research_readiness', workspace)
+        self.assertIn('opportunity_readiness', workspace)
+        self.assertEqual(workspace['opportunity_readiness']['label'], VERIFY_SITE_LABEL)
         self.assertIn('verification_tasks', workspace)
         self.assertGreater(workspace['lane']['lane_score'], 0)
         self.assertGreaterEqual(len(workspace['lane']['lane_reasons']), 1)
@@ -812,6 +1075,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('lane_readiness_label', comparison['recommended_first_choice'])
         self.assertIn('research_readiness_label', comparison['recommended_first_choice'])
         self.assertIn('research_readiness', comparison['compared_sites'][0])
+        self.assertIn('opportunity_readiness', comparison['compared_sites'][0])
+        self.assertIn('actionable', comparison['compared_sites'][0])
+        self.assertIn('readiness_label', comparison['recommended_first_choice'])
         self.assertIn('verification_tasks', comparison['compared_sites'][0])
         self.assertIn('lane_reasons', comparison['compared_sites'][0])
         self.assertGreaterEqual(len(comparison['recommended_first_choice']['why']), 1)
@@ -829,6 +1095,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Target Industries', body)
         self.assertIn('Lane', body)
         self.assertIn('Research', body)
+        self.assertIn('Readiness', body)
+        self.assertIn('Opportunity readiness', body)
         self.assertIn('Research readiness', body)
         self.assertIn('Strong lane', body)
         self.assertIn('Risks / Confirm', body)
@@ -879,9 +1147,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(chemicals['count'], 1)
         self.assertEqual(chemicals['top_companies'][0]['company'], 'Acme Chemicals')
         self.assertEqual(chemicals['top_companies'][0]['opportunity_label'], 'Strong rail prospect')
-        self.assertEqual(chemicals['top_companies'][0]['readiness_label'], 'Ready for outreach')
-        self.assertEqual(chemicals['ready_count'], 1)
-        self.assertEqual(chemicals['site_review_count'], 0)
+        self.assertEqual(chemicals['top_companies'][0]['readiness_label'], 'Verify site first')
+        self.assertEqual(chemicals['ready_count'], 0)
+        self.assertEqual(chemicals['site_review_count'], 1)
         self.assertEqual(warehousing['top_companies'][0]['company'], 'Front Range Logistics')
 
         filtered = filter_supply_chains(
@@ -889,7 +1157,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
             group='Chemicals',
             query='industrial gases',
             opportunity='Strong rail prospect',
-            readiness='Ready for outreach',
+            readiness='Verify site first',
             min_priority=1,
             sort='ready',
         )
@@ -899,7 +1167,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(summary['chain_count'], 2)
         self.assertEqual(summary['company_matches'], 2)
         self.assertEqual(summary['strong_prospects'], 1)
-        self.assertEqual(summary['ready_for_outreach'], 1)
+        self.assertEqual(summary['ready_for_outreach'], 0)
 
         options = build_supply_chain_filter_options(catalog)
         self.assertIn('Chemicals', options['groups'])
@@ -914,7 +1182,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(detail['companies'][0]['company'], 'Acme Chemicals')
         self.assertEqual(len(detail['steps']), 4)
         self.assertEqual(detail['action_queue'][0]['company'], 'Acme Chemicals')
-        self.assertIn('Open opportunity workspace', detail['action_queue'][0]['recommended_action'])
+        self.assertIn('Compare industrial sites', detail['action_queue'][0]['recommended_action'])
         self.assertTrue(any(
             company['company'] == 'Acme Chemicals'
             for step in detail['steps']
@@ -934,7 +1202,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('/supply-chains/chemicals', catalog_body)
         self.assertIn('Strong rail prospects', catalog_body)
         self.assertIn('Ready for outreach', catalog_body)
-        self.assertIn('Needs site review', catalog_body)
+        self.assertIn('Verify/compare sites', catalog_body)
 
         self.assertEqual(detail_response.status_code, 200)
         detail_body = detail_response.get_data(as_text=True)
@@ -947,14 +1215,14 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Rail-service possible', detail_body)
         self.assertIn('Strong rail prospect', detail_body)
         self.assertIn('Ready for outreach', detail_body)
-        self.assertIn('Open opportunity workspace', detail_body)
+        self.assertIn('Compare industrial sites', detail_body)
         self.assertIn('Acme Chemicals', detail_body)
         self.assertIn('/companies/Acme%20Chemicals', detail_body)
         self.assertIn('/companies/Acme%20Chemicals/site-comparison', detail_body)
         self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', detail_body)
 
     def test_supply_chains_route_filters_group_search_readiness_and_sort(self):
-        response = self.client.get('/supply-chains?group=Chemicals&q=industrial%20gases&opportunity=Strong%20rail%20prospect&readiness=Ready%20for%20outreach&min_priority=1&sort=ready')
+        response = self.client.get('/supply-chains?group=Chemicals&q=industrial%20gases&opportunity=Strong%20rail%20prospect&readiness=Verify%20site%20first&min_priority=1&sort=ready')
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
@@ -975,6 +1243,7 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Lane Readiness', body)
         self.assertIn('Research Checklist', body)
         self.assertIn('Research readiness', body)
+        self.assertIn('Opportunity readiness', body)
         self.assertIn('Verification Tasks', body)
         self.assertIn('Strong lane', body)
         self.assertIn('Talking Points', body)

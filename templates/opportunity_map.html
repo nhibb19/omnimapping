@@ -123,8 +123,17 @@
     </h2>
     <p class="summary-note">
       Visible layers show {{ map_data.type_counts.company or 0 }} company markers and {{ map_data.type_counts.site or 0 }} site markers after the active filters and selected layers are applied.
+      Coverage: {{ map_data.summary.companies }} of {{ map_data.summary.filtered_companies }} filtered companies mapped, and {{ map_data.summary.sites }} of {{ map_data.summary.filtered_sites }} filtered sites mapped.
       {% if map_data.summary.markers == 0 %}No map nodes match these filters; broaden a filter or turn another layer back on.{% endif %}
     </p>
+    {% if map_data.summary.unmapped_nodes %}
+      <p class="summary-note">
+        {{ map_data.summary.unmapped_nodes }} filtered record{{ 's' if map_data.summary.unmapped_nodes != 1 else '' }} are not shown because coordinates are missing.
+        {% if map_data.unmapped_nodes %}
+          Unmapped examples: {{ map_data.unmapped_nodes[:3]|map(attribute='label')|join(', ') }}.
+        {% endif %}
+      </p>
+    {% endif %}
   </div>
   <div class="active-filter-list">
     {% if map_data.filter_context.active_labels %}
@@ -208,6 +217,108 @@
         <p class="opportunity-note" id="selected-node-next"></p>
         <div class="map-popup-actions" id="selected-node-actions"></div>
       </div>
+    </section>
+
+    <section class="section map-action-plan">
+      <div class="section-head">
+        <div>
+          <h2>Action Plan</h2>
+          <p class="summary-note">Best territory plays from the current map view.</p>
+        </div>
+      </div>
+      {% if map_data.territory_plays %}
+        <div class="territory-play-list">
+          {% for play in map_data.territory_plays %}
+            <details class="territory-play">
+              <summary>
+                <div class="territory-play-summary">
+                  <div class="territory-play-head">
+                    <div>
+                      <div class="page-kicker">{{ play.territory_label }}</div>
+                      <h3>{{ play.title }}</h3>
+                    </div>
+                    <span class="pill {{ 'positive' if play.score >= 80 else 'review' if play.score >= 60 else 'neutral' }}">{{ play.score }}/100</span>
+                  </div>
+                  <p>{{ play.reason }}</p>
+                  <div class="territory-play-context">
+                    <span>{{ play.company_count }} compan{{ 'y' if play.company_count == 1 else 'ies' }}</span>
+                    <span>{{ play.site_count }} site{{ '' if play.site_count == 1 else 's' }}</span>
+                    <span>{{ play.signal }}</span>
+                    {% if play.primary_action %}
+                      <span>Primary: {{ play.primary_action.label }}</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </summary>
+              <div class="territory-play-detail">
+                <div class="next-action-line">
+                  <strong>Next:</strong> {{ play.next_action }}
+                </div>
+                {% if play.blocking_issue %}
+                  <div class="watch-item"><strong>Watch:</strong> {{ play.blocking_issue }}</div>
+                {% endif %}
+                {% if play.company_details %}
+                  <div>
+                    <h4>Top companies</h4>
+                    <div class="play-company-list">
+                      {% for company in play.company_details %}
+                        <div class="play-company-row">
+                          <div>
+                            <strong>{{ loop.index }}. {{ company.company }}</strong>
+                            <span>{{ company.priority_score }}/100 priority · {{ company.site_match_score }}/100 site fit</span>
+                            <span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span>
+                          </div>
+                          <div class="play-site-context">
+                            {% if company.matched_site %}
+                              {{ company.matched_site }} · {{ company.site_readiness_label }}
+                              {% if company.site_readiness_score is not none %} ({{ company.site_readiness_score }}/100){% endif %}
+                              {% if company.confidence %} · {{ company.confidence }} confidence{% endif %}
+                            {% else %}
+                              No visible site option
+                            {% endif %}
+                          </div>
+                          <div class="subtle">{{ company.watch_item }}</div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+                {% if play.site_details %}
+                  <div>
+                    <h4>Site readiness</h4>
+                    <div class="play-site-list">
+                      {% for site in play.site_details %}
+                        <a href="{{ site.url }}">
+                          <strong>{{ site.site_name }}</strong>
+                          <span>{{ site.readiness_label }} · {{ site.readiness_score }}/100 · {{ site.confidence }} confidence</span>
+                        </a>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+                <div class="map-popup-actions territory-play-actions">
+                  {% if play.top_marker_id %}
+                    <button type="button" class="button secondary small" data-focus-marker="{{ play.top_marker_id }}">Focus company</button>
+                  {% endif %}
+                  {% if play.primary_action %}
+                    <a class="button small" href="{{ play.primary_action.url }}">{{ play.primary_action.label }}</a>
+                  {% endif %}
+                  {% for link in play.links %}
+                    {% if not play.primary_action or link.label != play.primary_action.label %}
+                      <a class="button secondary small" href="{{ link.url }}">{{ link.label }}</a>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+            </details>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty compact-empty">
+          <strong>No action plan yet.</strong>
+          <div>Turn on company or site layers, or broaden filters, to see territory plays.</div>
+        </div>
+      {% endif %}
     </section>
 
     <section class="section map-intel-panel">

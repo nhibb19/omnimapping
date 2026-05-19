@@ -1,6 +1,13 @@
 """Supply chain definitions and company matching for dashboard workflows."""
 
 from .scoring import safe_int
+from .opportunity_readiness import (
+    COMPARE_SITES_LABEL,
+    QUALIFY_FIT_LABEL,
+    READY_LABEL,
+    VERIFY_SITE_LABEL,
+    build_opportunity_readiness,
+)
 
 
 SUPPLY_CHAIN_DEFINITIONS = [
@@ -224,26 +231,21 @@ def rail_opportunity(company):
 
 def readiness_status(company):
     """Classify how ready a matched company is for follow-up."""
-    priority_score = safe_int(company.get("priority_score"), 0)
-    site_match_score = safe_int(company.get("best_site_match_score"), 0)
-    best_site = company.get("best_site_name") or company.get("best_recommended_site")
-
-    if priority_score >= 70 and site_match_score >= 60 and best_site:
-        return {"label": "Ready for outreach", "tone": "positive", "rank": 3}
-    if not best_site:
-        return {"label": "Needs site review", "tone": "warning", "rank": 1}
-    if priority_score >= 60 or site_match_score >= 50:
-        return {"label": "Qualify fit", "tone": "review", "rank": 2}
-    return {"label": "Monitor", "tone": "neutral", "rank": 0}
+    readiness = company.get("opportunity_readiness") or build_opportunity_readiness(company)
+    return {
+        "label": readiness["label"],
+        "tone": readiness["tone"],
+        "rank": readiness["rank"],
+    }
 
 
 def summarize_companies(companies):
     """Return operational counts for a matched company set."""
     strong = [company for company in companies if rail_opportunity(company)["label"] == "Strong rail prospect"]
     possible = [company for company in companies if rail_opportunity(company)["label"] == "Rail-service possible"]
-    ready = [company for company in companies if readiness_status(company)["label"] == "Ready for outreach"]
-    site_review = [company for company in companies if readiness_status(company)["label"] == "Needs site review"]
-    qualify = [company for company in companies if readiness_status(company)["label"] == "Qualify fit"]
+    ready = [company for company in companies if readiness_status(company)["label"] == READY_LABEL]
+    site_review = [company for company in companies if readiness_status(company)["label"] in {VERIFY_SITE_LABEL, COMPARE_SITES_LABEL}]
+    qualify = [company for company in companies if readiness_status(company)["label"] == QUALIFY_FIT_LABEL]
     return {
         "count": len(companies),
         "strong_count": len(strong),
@@ -293,11 +295,11 @@ def recommended_company_action(company, best_site_name=None, readiness_label=Non
     """Return the next practical dashboard action for a matched company."""
     best_site_name = best_site_name or company.get("best_site_name") or company.get("best_recommended_site", "")
     readiness_label = readiness_label or readiness_status(company)["label"]
-    if readiness_label == "Ready for outreach" and best_site_name:
+    if readiness_label == READY_LABEL and best_site_name:
         return "Open opportunity workspace and confirm outreach timing."
-    if readiness_label == "Needs site review":
+    if readiness_label in {VERIFY_SITE_LABEL, COMPARE_SITES_LABEL}:
         return "Compare industrial sites and choose a first-choice location."
-    if readiness_label == "Qualify fit":
+    if readiness_label == QUALIFY_FIT_LABEL:
         return "Validate material volumes, lane fit, and site requirements."
     return "Monitor as a market category and revisit when project signals improve."
 
@@ -403,9 +405,10 @@ def filter_supply_chains(chains, group=None, query=None, min_priority=None, oppo
         filtered = [chain for chain in filtered if count_key and chain.get(count_key, 0) > 0]
     if readiness:
         readiness_counts = {
-            "Ready for outreach": "ready_count",
-            "Qualify fit": "qualify_count",
-            "Needs site review": "site_review_count",
+            READY_LABEL: "ready_count",
+            QUALIFY_FIT_LABEL: "qualify_count",
+            VERIFY_SITE_LABEL: "site_review_count",
+            COMPARE_SITES_LABEL: "site_review_count",
             "Monitor": "readiness_monitor_count",
         }
         count_key = readiness_counts.get(readiness)

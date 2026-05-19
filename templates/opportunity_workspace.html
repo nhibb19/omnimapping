@@ -23,6 +23,7 @@
     <div class="metric"><span class="muted">Compatibility</span><strong>{{ workspace.site_match.compatibility_score }}/100</strong><span class="pill {{ score_tone(workspace.site_match.compatibility_score) }}">{{ match_label(workspace.site_match.compatibility_score) }}</span></div>
     <div class="metric"><span class="muted">Lane readiness</span><strong>{{ workspace.lane.lane_score }}/100</strong><span class="pill {{ score_tone(workspace.lane.lane_score) }}">{{ workspace.lane.lane_readiness_label }}</span></div>
     <div class="metric"><span class="muted">Research readiness</span><strong>{{ workspace.research_readiness.score }}/100</strong><span class="pill {{ workspace.research_readiness.tone }}">{{ workspace.research_readiness.label }}</span></div>
+    <div class="metric"><span class="muted">Opportunity readiness</span><strong>{{ workspace.opportunity_readiness.label }}</strong><span class="pill {{ workspace.opportunity_readiness.tone }}">{{ 'Actionable' if workspace.opportunity_readiness.actionable else 'Needs work' }}</span></div>
     <div class="metric"><span class="muted">State pair</span><strong>{{ workspace.company.state }} to {{ workspace.site.state }}</strong></div>
   </div>
 </section>
@@ -97,7 +98,8 @@
 
     <section class="section">
       <h2>Next Action</h2>
-      <p>{{ workspace.priority.next_action }}</p>
+      <p>{{ workspace.opportunity_readiness.next_action }}</p>
+      <p class="muted">{{ workspace.opportunity_readiness.reason }}</p>
     </section>
 
     <section class="section">

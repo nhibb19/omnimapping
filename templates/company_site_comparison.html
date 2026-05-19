@@ -23,10 +23,13 @@
       <span class="muted">First choice</span>
       <strong>{{ comparison.recommended_first_choice.site_name if comparison.recommended_first_choice else 'None' }}</strong>
     </div>
+    {% if comparison.recommended_first_choice %}
+      <div class="metric"><span class="muted">First-choice readiness</span><strong>{{ comparison.recommended_first_choice.readiness_label }}</strong><span class="pill {{ 'positive' if comparison.recommended_first_choice.actionable else 'review' }}">{{ 'Actionable' if comparison.recommended_first_choice.actionable else 'Needs work' }}</span></div>
+    {% endif %}
   </div>
   {% if comparison.recommended_first_choice %}
     <p><strong>Recommended first-choice site:</strong> {{ comparison.recommended_first_choice.site_name }} at {{ comparison.recommended_first_choice.compatibility_score }}/100 compatibility and {{ comparison.recommended_first_choice.lane_score }}/100 lane readiness.</p>
-    <p><strong>Research readiness:</strong> {{ comparison.recommended_first_choice.research_readiness_label }}.</p>
+    <p><strong>Opportunity readiness:</strong> {{ comparison.recommended_first_choice.readiness_label }}. <strong>Research readiness:</strong> {{ comparison.recommended_first_choice.research_readiness_label }}.</p>
     <ul class="clean">
       {% for reason in comparison.recommended_first_choice.why %}
         <li>{{ reason }}</li>
@@ -57,6 +60,7 @@
           <th>Compatibility</th>
           <th>Lane</th>
           <th>Research</th>
+          <th>Readiness</th>
           <th>Location</th>
           <th>Acres</th>
           <th>Rail</th>
@@ -84,6 +88,11 @@
             <td>
               <span class="mobile-label">Research</span>
               <span class="score-chip {{ compared_site.research_readiness.tone }}"><strong>{{ compared_site.research_readiness.score }}</strong><span>{{ compared_site.research_readiness.label }}</span></span>
+            </td>
+            <td>
+              <span class="mobile-label">Readiness</span>
+              <span class="pill {{ compared_site.opportunity_readiness.tone }}">{{ compared_site.opportunity_readiness.label }}</span>
+              <span class="subtle">{{ 'Actionable' if compared_site.actionable else compared_site.opportunity_readiness.reason }}</span>
             </td>
             <td><span class="mobile-label">Location</span>{{ site.location }}</td>
             <td><span class="mobile-label">Acres</span>{{ site.acres or 'Confirm' }}</td>
