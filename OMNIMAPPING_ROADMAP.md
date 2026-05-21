@@ -43,9 +43,10 @@ The application follows a modular architecture centered around a CLI interface i
 - **Test Coverage**: Added unit and CLI tests for scoring, validation, exports, ranked company JSON export, invalid ranked-export arguments, focused reports, report target directories, maps, and verification workflows.
 - **Verification Automation**: Added a lightweight local check script and GitHub Actions workflow that run `python3 main.py --verify` and `python3 -m unittest discover -s tests`.
 - **Map Visualization**: Generated maps for companies, industrial sites, and top opportunities with interactive features.
-- **Local Web Dashboard**: Added a minimal Flask dashboard for non-technical users with ranked company filters, company detail profiles, industrial site views, top compatible company lists, CSV/JSON download actions, route tests, and a `python3 dashboard.py --smoke-test` command.
+- **Local Web Dashboard**: Added a Flask dashboard for non-technical users with a Command Center landing page, ranked company filters, readiness filters, company detail profiles, industrial site views, top compatible company lists, saved workflow shortcuts, CSV/JSON/TXT download actions, route tests, and a `python3 dashboard.py --smoke-test` command.
 - **Opportunity Workspace**: Added a decision-oriented dashboard workspace that combines one company and one industrial site, reusing existing scoring, matching, priority reason, next-action, and brief-generation helpers. The workspace includes pair fit, risks/data gaps, talking points, JSON export, and TXT outreach brief export.
 - **Company Site Comparison**: Added a dashboard comparison view for one selected company that ranks top compatible sites, shows key site attributes side by side, includes matching reasons and confirmation items, recommends a first-choice site, links each site to the Opportunity Workspace, and provides JSON/CSV downloads.
+- **Command Center Workflow Layer**: Added `/`, `/pipeline`, and `/verification` routes that organize opportunities by next action, prioritize site verification tasks, surface territory plays, and export a plain-text opportunity packet at `/downloads/opportunity-packet.txt`.
 - **OmniTRAX Source Data Refresh**: Refreshed source CSVs against official OmniTRAX pages researched on 2026-05-06. `data/rail_infrastructure.csv` now accounts for 37 current OmniTRAX locations from the official locations directory, including railroads, industrial parks, port/terminal railroads, and named development assets. `data/industrial_sites.csv` now includes 28 practical economic-development sites, corridors, transload terminals, ports, and rail-served industrial parks, including Access 25 Logistics Park, Great Western Industrial Park, Savannah Gateway Industrial Hub, Brownsville, River Ridge, Port Muskogee, Port of Catoosa, Stockton, Chicago Rail Link, and other served-market assets. `data/companies.csv` now contains a stronger 64-company prospect universe with speculative prospect language in `why_target` where appropriate. `data/segments.csv` now includes a dedicated Chemicals segment for bulk chemical and resin prospects.
 - **Data Source Traceability**: Added `docs/data_sources.md` with source URLs, research date, assumptions, and remaining gaps. README now links to this source note.
 - **Data Quality Tests**: Added focused tests that load the curated live data, check required site fields, confirm known current OmniTRAX assets appear in site directory output, verify a Savannah Gateway compatibility score, and assert current CSV validation catches no malformed records.
@@ -73,7 +74,7 @@ The application follows a modular architecture centered around a CLI interface i
 - Document testing procedures and expected outputs for key features.
 
 ### Phase 2: User Interface and Accessibility Enhancements (Q2 2026)
-- Expand the local Flask dashboard based on user feedback, especially saved views, comparison filtering, clearer export naming, and workspace workflow refinements.
+- Expand the local Flask dashboard based on user feedback, especially configurable saved views, comparison filtering, clearer export naming, and workspace workflow refinements.
 - Add API endpoints for programmatic access to scoring and search functionality.
 - Implement advanced filtering and visualization in the web interface.
 - Create user documentation and guided workflows.
@@ -94,10 +95,10 @@ python3 main.py
 
 For the local dashboard:
 ```bash
-python3 dashboard.py
+python3 dashboard.py --port 5002
 ```
 
-Then open `http://127.0.0.1:5000`.
+Then open `http://127.0.0.1:5002`. If no port is provided, Flask uses the dashboard default.
 
 ## Verification
 To verify the current implementation:
@@ -107,9 +108,10 @@ To verify the current implementation:
 - Run `source .venv/bin/activate && python3 -m unittest discover -s tests` for the full test suite.
 - Run `source .venv/bin/activate && python3 dashboard.py --smoke-test` for a fast dashboard route check.
 - Test search, filtering, and export functionalities.
-- Open the dashboard and verify ranked company filters, company detail pages, industrial site filters, industrial site confidence/gap display, Opportunity Workspace links, and download actions.
-- Open `http://127.0.0.1:5000/workspace?company=Nucor&site=Savannah%20Gateway%20Industrial%20Hub` and confirm pair fit, risks/data gaps, talking points, next action, JSON download, and TXT brief download.
-- Open `http://127.0.0.1:5000/companies/Nucor/site-comparison` and confirm the selected company basics, priority score, top compatible sites table, first-choice recommendation, workspace links, JSON download, and CSV download.
+- Open the dashboard and verify the Command Center, Opportunity Pipeline, Verification Queue, ranked company filters, readiness filters, company detail pages, industrial site filters, industrial site confidence/gap display, Opportunity Workspace links, saved shortcuts, and download actions.
+- Open `http://127.0.0.1:5002/downloads/opportunity-packet.txt` and confirm the packet includes pipeline counts, top verification items, and territory plays.
+- Open `http://127.0.0.1:5002/workspace?company=Nucor&site=Savannah%20Gateway%20Industrial%20Hub` and confirm pair fit, risks/data gaps, talking points, next action, JSON download, and TXT brief download.
+- Open `http://127.0.0.1:5002/companies/Nucor/site-comparison` and confirm the selected company basics, priority score, top compatible sites table, first-choice recommendation, workspace links, JSON download, and CSV download.
 - Run `python3 main.py --top-companies --limit 10 --min-score 70` and inspect the generated `exports/top_companies_<timestamp>.json`.
 - Check generated maps in `maps/` directory.
 - Validate scoring outputs and opportunity briefs.

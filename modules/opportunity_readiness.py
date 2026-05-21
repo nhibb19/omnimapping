@@ -84,11 +84,8 @@ def build_opportunity_readiness(company, site=None, compatibility_score=None, la
     site_ready = (
         has_usable_site
         and not blocked_by_gaps
-        and (
-            readiness_label == "Research Ready"
-            or review_status == "confirmed"
-        )
-        and readiness_score >= 60
+        and review_status == "confirmed"
+        and readiness_label == "Research Ready"
     )
 
     if not has_usable_site:

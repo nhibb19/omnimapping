@@ -31,11 +31,45 @@
   <div class="scan-item info"><span class="muted">Matched companies</span><strong>{{ report.top_matched_companies|length }}</strong></div>
 </section>
 
+{% if report.review_outcome %}
+<section class="section">
+  <div class="section-head">
+    <div>
+      <h2>Review Saved: Next Step</h2>
+      <p class="summary-note">{{ report.review_outcome.description }}</p>
+    </div>
+    <span class="pill {{ report.site_profile.research_readiness.tone }}">{{ report.review_outcome.readiness_label }}</span>
+  </div>
+  <div class="gap-note {{ report.site_profile.research_readiness.tone }}">
+    <strong>{{ report.review_outcome.headline }}</strong>
+    {% if report.review_outcome.tasks %}
+      Next blocker: {{ report.review_outcome.tasks[0] }}
+    {% else %}
+      No open research blockers remain for this site.
+    {% endif %}
+  </div>
+  {% if report.review_outcome.unlocked_opportunities %}
+    <h3>Unlocked Opportunities</h3>
+    <ul class="clean">
+      {% for item in report.review_outcome.unlocked_opportunities %}
+        <li>{{ item.company }} with {{ report.site_profile.site_name }} at {{ item.compatibility_score }}/100 site fit. Next: {{ item.opportunity_readiness.next_action }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <div class="actions">
+    <a class="button primary small" href="{{ report.review_outcome.primary_action.url }}">{{ report.review_outcome.primary_action.label }}</a>
+    {% for action in report.review_outcome.secondary_actions %}
+      <a class="button small" href="{{ action.url }}">{{ action.label }}</a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <section class="section review-panel">
   <div class="section-head">
     <div>
       <h2>Review Status</h2>
-      <p class="summary-note">Use this local workflow to capture validation status before outreach.</p>
+      <p class="summary-note">To verify this site, confirm the source, date, acreage, access fields, and clear any resolved data gaps before saving as Confirmed.</p>
     </div>
     <span class="pill {{ report.site_profile.review_status_tone }}">{{ report.site_profile.review_status_label }}</span>
   </div>
@@ -50,6 +84,11 @@
       {% if report.site_profile.source_update_url %}
         <p><strong>Source update:</strong> <a href="{{ report.site_profile.source_update_url }}">{{ report.site_profile.source_update_url }}</a></p>
       {% endif %}
+      <div class="breakdown">
+        <div class="breakdown-row"><span>Owner/contact</span><strong>{{ report.site_profile.owner_contact or 'Needs verification' }}</strong></div>
+        <div class="breakdown-row"><span>Utilities</span><strong>{{ report.site_profile.utilities or 'Needs verification' }}</strong></div>
+        <div class="breakdown-row"><span>Zoning/entitlement</span><strong>{{ report.site_profile.zoning_entitlement or 'Needs verification' }}</strong></div>
+      </div>
       {% if report.site_profile.data_quality_flags %}
         <div class="gap-note"><strong>Data quality flags:</strong> {{ report.site_profile.data_quality_flags | join(', ') }}.</div>
       {% else %}
@@ -57,6 +96,24 @@
       {% endif %}
       <div class="gap-note {{ report.site_profile.research_readiness.tone }}">
         <strong>Research readiness:</strong> {{ report.site_profile.research_readiness.label }} with {{ report.site_profile.research_readiness.confirmed_count }} of {{ report.site_profile.research_readiness.total_count }} checklist items confirmed.
+      </div>
+      {% if report.site_profile.research_readiness.tasks %}
+        <div class="gap-note">
+          <strong>Still blocking outreach:</strong> {{ report.site_profile.research_readiness.tasks[0] }}
+        </div>
+        {% if report.site_profile.review_status == 'confirmed' %}
+          <div class="gap-note">
+          <strong>Review saved, but outreach is still blocked.</strong>
+            Confirmed means the local review status was saved; outreach-ready means Confirmed plus Research Ready. This site is not usable for outreach until the research checklist clears {{ report.site_profile.research_readiness.blocked_count }} blocker{{ 's' if report.site_profile.research_readiness.blocked_count != 1 else '' }}.
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="gap-note neutral">
+          <strong>Ready to use:</strong> This site has no open research-readiness tasks in the current checklist.
+        </div>
+      {% endif %}
+      <div class="gap-note neutral">
+        <strong>Local overlay:</strong> Review updates are saved in data/review_status.json and do not rewrite the source CSV.
       </div>
     </div>
     <form class="review-form" method="post" action="{{ url_for('update_site_review', site_name=report.site_profile.site_name) }}">
@@ -77,10 +134,89 @@
         <input id="source_update_url" name="source_update_url" type="url" value="{{ report.site_profile.source_update_url }}" placeholder="https://...">
       </div>
       <div>
+        <label for="source_confidence">Source confidence</label>
+        <select id="source_confidence" name="source_confidence">
+          {% set selected_confidence = report.site_profile.source_confidence or '' %}
+          {% for confidence in ['', 'High', 'Medium', 'Low'] %}
+            <option value="{{ confidence }}" {% if selected_confidence == confidence %}selected{% endif %}>{{ confidence or 'Keep unspecified' }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="last_verified">Last verified</label>
+        <input id="last_verified" name="last_verified" type="date" value="{{ report.site_profile.last_verified[:10] if report.site_profile.last_verified }}">
+      </div>
+      <div>
+        <label for="acres">Verified acres</label>
+        <input id="acres" name="acres" type="text" inputmode="decimal" value="{{ report.site_profile.acres }}" placeholder="Available acreage">
+      </div>
+      <div class="review-field-grid">
+        <div>
+          <label for="rail_served">Rail served</label>
+          <select id="rail_served" name="rail_served">
+            {% for value in ['', 'Yes', 'No'] %}
+              <option value="{{ value }}" {% if report.site_profile.rail_served|lower == value|lower %}selected{% endif %}>{{ value or 'Confirm' }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="nearby_class1">Class I / serving railroad</label>
+          <select id="nearby_class1" name="nearby_class1">
+            {% for value in ['', 'Yes', 'No'] %}
+              <option value="{{ value }}" {% if report.site_profile.nearby_class1|lower == value|lower %}selected{% endif %}>{{ value or 'Confirm' }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="transload_available">Transload</label>
+          <select id="transload_available" name="transload_available">
+            {% for value in ['', 'Yes', 'No'] %}
+              <option value="{{ value }}" {% if report.site_profile.transload_available|lower == value|lower %}selected{% endif %}>{{ value or 'Confirm' }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="interstate_access">Truck access</label>
+          <select id="interstate_access" name="interstate_access">
+            {% for value in ['', 'Yes', 'No'] %}
+              <option value="{{ value }}" {% if report.site_profile.interstate_access|lower == value|lower %}selected{% endif %}>{{ value or 'Confirm' }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="port_access">Port access</label>
+          <select id="port_access" name="port_access">
+            {% for value in ['', 'Yes', 'No'] %}
+              <option value="{{ value }}" {% if report.site_profile.port_access|lower == value|lower %}selected{% endif %}>{{ value or 'Confirm' }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label for="data_gap_notes">Remaining data gaps</label>
+        <textarea id="data_gap_notes" name="data_gap_notes" rows="3" placeholder="Leave blank when the listed data gaps are resolved">{{ report.site_profile.data_gap_notes }}</textarea>
+      </div>
+      <div>
+        <label for="owner_contact">Owner/contact evidence</label>
+        <textarea id="owner_contact" name="owner_contact" rows="2" placeholder="Owner, broker, public authority, developer, or local economic-development contact">{{ report.site_profile.owner_contact }}</textarea>
+      </div>
+      <div>
+        <label for="utilities">Utility evidence</label>
+        <textarea id="utilities" name="utilities" rows="2" placeholder="Power, water, sewer, gas, or utility capacity notes from available source material">{{ report.site_profile.utilities }}</textarea>
+      </div>
+      <div>
+        <label for="zoning_entitlement">Zoning / entitlement evidence</label>
+        <textarea id="zoning_entitlement" name="zoning_entitlement" rows="2" placeholder="Industrial zoning, permitted use, entitlement status, or approval constraint notes">{{ report.site_profile.zoning_entitlement }}</textarea>
+      </div>
+      <div>
         <label for="review_notes">Review notes</label>
         <textarea id="review_notes" name="review_notes" rows="4" placeholder="What was confirmed, what changed, and what still needs follow-up">{{ report.site_profile.review_notes }}</textarea>
       </div>
       <button class="button primary" type="submit">Save Review</button>
+      <div class="actions">
+        <a class="button small" href="{{ url_for('verification_queue') }}">Back to Site Verification</a>
+        <a class="button small" href="{{ url_for('opportunity_pipeline') }}">Check Pipeline</a>
+      </div>
     </form>
   </div>
 </section>
@@ -109,6 +245,9 @@
     <p><strong>Source:</strong> <a href="{{ report.site_profile.source_url }}">{{ report.site_profile.source_url }}</a></p>
   {% endif %}
   <p><strong>Data gaps:</strong> {{ report.site_profile.data_gap_notes or 'No specific gap notes recorded.' }}</p>
+  <p><strong>Owner/contact:</strong> {{ report.site_profile.owner_contact or 'Needs verification' }}</p>
+  <p><strong>Utilities:</strong> {{ report.site_profile.utilities or 'Needs verification' }}</p>
+  <p><strong>Zoning/entitlement:</strong> {{ report.site_profile.zoning_entitlement or 'Needs verification' }}</p>
   {% if report.site_profile.data_quality_flags %}
     <div class="gap-note"><strong>Confirm before outreach:</strong> {{ report.site_profile.data_quality_flags | join(', ') }}.</div>
   {% endif %}
@@ -134,39 +273,46 @@
   {% endif %}
 </section>
 
-<section class="section">
-  <h2>Top Compatible Companies</h2>
-  <table class="responsive-table">
-    <thead>
-      <tr>
-        <th>Company</th>
-        <th>Compatibility</th>
-        <th>Priority</th>
-        <th>Segment</th>
-        <th>Commodity</th>
-        <th>Why It Fits</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for match in report.top_matched_companies %}
+<details class="section collapsible-section">
+  <summary>
+    <div>
+      <h2>Top Compatible Companies</h2>
+      <p class="summary-note">{{ report.top_matched_companies|length }} matched companies hidden to keep this site review focused.</p>
+    </div>
+  </summary>
+  <div class="collapsible-body">
+    <table class="responsive-table">
+      <thead>
         <tr>
-          <td class="primary-cell"><span class="mobile-label">Company</span><a href="{{ url_for('company_detail', company_name=match.company) }}"><strong>{{ match.company }}</strong></a></td>
-          <td><span class="mobile-label">Compatibility</span><span class="score-chip {{ score_tone(match.compatibility_score) }}"><strong>{{ match.compatibility_score }}</strong><span>{{ match_label(match.compatibility_score) }}</span></span></td>
-          <td><span class="mobile-label">Priority</span><span class="score-chip {{ score_tone(match.priority_score) }}"><strong>{{ match.priority_score }}</strong><span>{{ priority_label(match.priority_score) }}</span></span></td>
-          <td><span class="mobile-label">Segment</span>{{ match.segment }}</td>
-          <td><span class="mobile-label">Commodity</span>{{ match.commodity }}</td>
-          <td class="wide-cell"><span class="mobile-label">Why It Fits</span>{{ match.matching_reasons[0] if match.matching_reasons else 'General industrial fit' }}</td>
-          <td class="action-cell">
-            <span class="mobile-label">Action</span>
-            <div class="action-stack">
-              <a class="button primary small" href="{{ url_for('opportunity_workspace', company=match.company, site=report.site_profile.site_name) }}">Open Workspace</a>
-              <a class="button small" href="{{ url_for('company_detail', company_name=match.company) }}">Review Company</a>
-            </div>
-          </td>
+          <th>Company</th>
+          <th>Compatibility</th>
+          <th>Priority</th>
+          <th>Segment</th>
+          <th>Commodity</th>
+          <th>Why It Fits</th>
+          <th>Action</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
+      </thead>
+      <tbody>
+        {% for match in report.top_matched_companies %}
+          <tr>
+            <td class="primary-cell"><span class="mobile-label">Company</span><a href="{{ url_for('company_detail', company_name=match.company) }}"><strong>{{ match.company }}</strong></a></td>
+            <td><span class="mobile-label">Compatibility</span><span class="score-chip {{ score_tone(match.compatibility_score) }}"><strong>{{ match.compatibility_score }}</strong><span>{{ match_label(match.compatibility_score) }}</span></span></td>
+            <td><span class="mobile-label">Priority</span><span class="score-chip {{ score_tone(match.priority_score) }}"><strong>{{ match.priority_score }}</strong><span>{{ priority_label(match.priority_score) }}</span></span></td>
+            <td><span class="mobile-label">Segment</span>{{ match.segment }}</td>
+            <td><span class="mobile-label">Commodity</span>{{ match.commodity }}</td>
+            <td class="wide-cell"><span class="mobile-label">Why It Fits</span>{{ match.matching_reasons[0] if match.matching_reasons else 'General industrial fit' }}</td>
+            <td class="action-cell">
+              <span class="mobile-label">Action</span>
+              <div class="action-stack">
+                <a class="button primary small" href="{{ url_for('opportunity_workspace', company=match.company, site=report.site_profile.site_name) }}">Open Workspace</a>
+                <a class="button small" href="{{ url_for('company_detail', company_name=match.company) }}">Review Company</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
 {% endblock %}

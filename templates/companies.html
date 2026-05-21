@@ -52,6 +52,15 @@
       <input id="min_score" name="min_score" type="number" min="0" max="100" value="{{ filters.min_score if filters.min_score is not none else '' }}">
     </div>
     <div>
+      <label for="readiness">Readiness</label>
+      <select id="readiness" name="readiness">
+        <option value="">Any readiness</option>
+        {% for readiness in filter_options.readinesses %}
+          <option value="{{ readiness }}" {% if filters.readiness == readiness %}selected{% endif %}>{{ readiness }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
       <label for="limit">Rows</label>
       <input id="limit" name="limit" type="number" min="1" max="500" value="{{ limit }}">
     </div>
@@ -62,8 +71,18 @@
   </form>
 </section>
 
+<section class="view-presets" aria-label="Company view shortcuts">
+  {% for preset in view_presets %}
+    <a class="preset-link" href="{{ url_for('companies', **preset.params) }}">
+      <strong>{{ preset.label }}</strong>
+      <span>{{ preset.description }}</span>
+    </a>
+  {% endfor %}
+</section>
+
 <section class="scan-strip" aria-label="Company scan summary">
-  <div class="scan-item positive"><span class="muted">Ready for outreach</span><strong>{{ scan_summary.ready_for_outreach }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Outreach prep</span><strong>{{ scan_summary.ready_for_outreach }}</strong></div>
+  <div class="scan-item review"><span class="muted">Human review</span><strong>{{ scan_summary.external_review_required }}</strong></div>
   <div class="scan-item review"><span class="muted">Verify site first</span><strong>{{ scan_summary.verify_site_first }}</strong></div>
   <div class="scan-item warning"><span class="muted">Compare sites</span><strong>{{ scan_summary.needs_site_review }}</strong></div>
   <div class="scan-item review"><span class="muted">Qualify fit</span><strong>{{ scan_summary.qualify_fit }}</strong></div>
@@ -120,12 +139,18 @@
             <span class="mobile-label">Next Action</span>
             <div class="pill-row status-line">
               <span class="pill {{ company.readiness_tone }}">{{ company.readiness_label }}</span>
+              {% if company.external_use %}
+                <span class="pill {{ company.external_use.tone }}">{{ company.external_use.status }}</span>
+              {% endif %}
             </div>
             {{ company.readiness_next_action or company.recommended_next_action }}
             {% if not company.best_site_name %}
               <span class="subtle">Data gap: confirm best-fit site before outreach.</span>
             {% elif company.opportunity_readiness and not company.opportunity_readiness.site_ready %}
               <span class="subtle">{{ company.opportunity_readiness.reason }}</span>
+            {% endif %}
+            {% if company.external_use %}
+              <span class="subtle">{{ company.external_use.note }}</span>
             {% endif %}
           </td>
           <td class="action-cell">

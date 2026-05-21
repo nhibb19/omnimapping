@@ -17,6 +17,8 @@ EXPORT_FIELDNAMES = [
     'state', 'city',
     'inbound_materials', 'outbound_products', 'why_target', 'omnitrax_outreach_angle',
     'priority_score', 'score_breakdown', 'score_reasons',
+    'opportunity_readiness_label', 'opportunity_readiness_reason',
+    'site_readiness_label', 'site_readiness_score', 'site_blocker_count',
     'best_recommended_site', 'best_recommended_site_location', 'best_recommended_site_score',
     'best_site_name', 'best_lane_score', 'best_lane_readiness_label',
     'site_match_quality_label', 'freight_intensity_label', 'infrastructure_dependency',
@@ -81,6 +83,7 @@ def build_company_export_row(company):
     commodity = company.get('commodity') or company.get('commodity_type', '')
     company_info = company.get('company_info') or company.get('why_target', '')
     best_recommended_site = get_best_recommended_site_name(company)
+    opportunity_readiness = company.get('opportunity_readiness') or {}
 
     row = {
         'company': company.get('company', ''),
@@ -98,6 +101,11 @@ def build_company_export_row(company):
         'priority_score': safe_score(company.get('priority_score', 0)),
         'score_breakdown': format_score_breakdown_for_export(company.get('score_breakdown', {})),
         'score_reasons': '; '.join(get_priority_reasons(company)),
+        'opportunity_readiness_label': opportunity_readiness.get('label') or company.get('readiness_label', ''),
+        'opportunity_readiness_reason': opportunity_readiness.get('reason', ''),
+        'site_readiness_label': opportunity_readiness.get('site_readiness_label', ''),
+        'site_readiness_score': opportunity_readiness.get('site_readiness_score', ''),
+        'site_blocker_count': opportunity_readiness.get('blocked_count', ''),
         'best_recommended_site': best_recommended_site,
         'best_recommended_site_location': company.get('best_recommended_site_location', ''),
         'best_recommended_site_score': company.get('best_site_match_score', ''),
@@ -433,8 +441,19 @@ def build_site_profile(site):
         'source_confidence': site.get('source_confidence', ''),
         'last_verified': site.get('last_verified', ''),
         'data_gap_notes': site.get('data_gap_notes', ''),
+        'owner_contact': site.get('owner_contact', ''),
+        'utilities': site.get('utilities', ''),
+        'zoning_entitlement': site.get('zoning_entitlement', ''),
         'data_quality_flags': site.get('data_quality_flags', []),
         'needs_confirmation': bool(site.get('needs_confirmation')),
+        'review_status': site.get('review_status', ''),
+        'review_status_label': site.get('review_status_label', ''),
+        'review_status_tone': site.get('review_status_tone', ''),
+        'review_notes': site.get('review_notes', ''),
+        'reviewed_by': site.get('reviewed_by', ''),
+        'reviewed_at': site.get('reviewed_at', ''),
+        'source_update_url': site.get('source_update_url', ''),
+        'ready_for_outreach': bool(site.get('ready_for_outreach')),
         'research_readiness': research_readiness,
     }
 
@@ -579,7 +598,16 @@ def filter_ranked_companies(companies, state=None, segment=None, commodity=None,
     return filtered
 
 
-def build_top_companies_export(companies, sites, limit=20, state=None, segment=None, commodity=None, min_score=None):
+def build_top_companies_export(
+    companies,
+    sites,
+    limit=20,
+    state=None,
+    segment=None,
+    commodity=None,
+    min_score=None,
+    export_context=None,
+):
     """Build a ranked JSON export of top companies and their best site fit."""
     ranked_companies = filter_ranked_companies(
         companies,
@@ -590,7 +618,7 @@ def build_top_companies_export(companies, sites, limit=20, state=None, segment=N
     )
     limited_companies = ranked_companies[:limit]
 
-    return {
+    payload = {
         'export_info': {
             'timestamp': datetime.now().isoformat(),
             'description': 'Ranked OmniMapping companies with priority scoring and best site recommendation',
@@ -615,14 +643,28 @@ def build_top_companies_export(companies, sites, limit=20, state=None, segment=N
                     for key, value in company.get('score_breakdown', {}).items()
                 },
                 'priority_reasons': get_priority_reasons(company),
+                'opportunity_readiness': company.get('opportunity_readiness') or {},
                 'best_recommended_site': build_best_site_recommendation(company, sites),
             }
             for index, company in enumerate(limited_companies, start=1)
         ],
     }
+    if export_context:
+        payload['export_info']['dashboard_context'] = export_context
+    return payload
 
 
-def export_top_companies_json(companies, sites, output_dir="exports", limit=20, state=None, segment=None, commodity=None, min_score=None):
+def export_top_companies_json(
+    companies,
+    sites,
+    output_dir="exports",
+    limit=20,
+    state=None,
+    segment=None,
+    commodity=None,
+    min_score=None,
+    export_context=None,
+):
     """Write ranked company opportunities to JSON and return the file path."""
     os.makedirs(output_dir, exist_ok=True)
 
@@ -637,6 +679,7 @@ def export_top_companies_json(companies, sites, output_dir="exports", limit=20, 
         segment=segment,
         commodity=commodity,
         min_score=min_score,
+        export_context=export_context,
     )
 
     with open(filepath, 'w') as f:
@@ -764,8 +807,20 @@ def build_site_directory(sites):
             'source_confidence': site.get('source_confidence', ''),
             'last_verified': site.get('last_verified', ''),
             'data_gap_notes': site.get('data_gap_notes', ''),
+            'owner_contact': site.get('owner_contact', ''),
+            'utilities': site.get('utilities', ''),
+            'zoning_entitlement': site.get('zoning_entitlement', ''),
             'data_quality_flags': site.get('data_quality_flags', []),
             'needs_confirmation': bool(site.get('needs_confirmation')),
+            'review_status': site.get('review_status', ''),
+            'review_status_label': site.get('review_status_label', ''),
+            'review_status_tone': site.get('review_status_tone', ''),
+            'review_notes': site.get('review_notes', ''),
+            'reviewed_by': site.get('reviewed_by', ''),
+            'reviewed_at': site.get('reviewed_at', ''),
+            'source_update_url': site.get('source_update_url', ''),
+            'ready_for_outreach': bool(site.get('ready_for_outreach')),
+            'research_readiness': site.get('research_readiness') or build_research_readiness(site),
             'latitude': site.get('latitude', ''),
             'longitude': site.get('longitude', ''),
         })

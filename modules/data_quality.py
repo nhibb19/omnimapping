@@ -85,6 +85,9 @@ def context_mentions(record, terms):
             "source_update_url",
             "source_url",
             "target_industries",
+            "owner_contact",
+            "utilities",
+            "zoning_entitlement",
         )
     )
     return any(term in haystack for term in terms)
@@ -162,19 +165,22 @@ def build_site_research_checklist(site, today=None):
         checklist_item(
             "owner_contact",
             "Owner/contact found",
-            context_mentions(site, {"owner", "contact", "broker", "authority", "developer"}),
+            bool(clean_text(site.get("owner_contact")))
+            or context_mentions(site, {"owner", "contact", "broker", "authority", "developer"}),
             "Find the site owner, broker, authority, or economic-development contact.",
         ),
         checklist_item(
             "utilities",
             "Utility status confirmed",
-            context_mentions(site, {"utility", "utilities", "power", "water", "sewer", "gas"}),
+            bool(clean_text(site.get("utilities")))
+            or context_mentions(site, {"utility", "utilities", "power", "water", "sewer", "gas"}),
             "Confirm utility availability, capacity, and known upgrade needs.",
         ),
         checklist_item(
             "zoning_entitlement",
             "Zoning/entitlement confirmed",
-            context_mentions(site, {"zoning", "entitlement", "permitted", "industrial use"}),
+            bool(clean_text(site.get("zoning_entitlement")))
+            or context_mentions(site, {"zoning", "entitlement", "permitted", "industrial use"}),
             "Confirm zoning, entitlement status, permitted uses, and approval constraints.",
         ),
         checklist_item(

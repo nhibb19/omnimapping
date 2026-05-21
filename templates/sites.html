@@ -78,9 +78,18 @@
   </form>
 </section>
 
+<section class="view-presets" aria-label="Site view shortcuts">
+  {% for preset in view_presets %}
+    <a class="preset-link" href="{{ url_for('sites', **preset.params) }}">
+      <strong>{{ preset.label }}</strong>
+      <span>{{ preset.description }}</span>
+    </a>
+  {% endfor %}
+</section>
+
 <section class="scan-strip" aria-label="Site scan summary">
   <div class="scan-item positive"><span class="muted">Research-ready sites</span><strong>{{ scan_summary.ready_sites }}</strong></div>
-  <div class="scan-item review"><span class="muted">Review queue</span><strong>{{ scan_summary.review_queue }}</strong></div>
+  <div class="scan-item review"><span class="muted">Site verification</span><strong>{{ scan_summary.review_queue }}</strong></div>
   <div class="scan-item warning"><span class="muted">Blocked</span><strong>{{ scan_summary.blocked }}</strong></div>
   <div class="scan-item info"><span class="muted">Need confirmation</span><strong>{{ scan_summary.needs_confirmation }}</strong></div>
 </section>
@@ -142,7 +151,7 @@
           <td class="action-cell">
             <span class="mobile-label">Actions</span>
             <div class="action-stack">
-              <a class="button primary small" href="{{ url_for('site_detail', site_name=site.site_name) }}">View Site</a>
+              <a class="button primary small" href="{{ url_for('site_detail', site_name=site.site_name) }}">Review Site</a>
             </div>
           </td>
         </tr>

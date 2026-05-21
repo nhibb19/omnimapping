@@ -1117,6 +1117,7 @@ class TestOmniMapping(unittest.TestCase):
             'priority_score',
             'score_breakdown',
             'priority_reasons',
+            'opportunity_readiness',
             'best_recommended_site',
         })
         self.assertTrue({

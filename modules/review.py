@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 
-from .data_quality import build_research_readiness
+from .data_quality import build_research_readiness, site_gap_flags
 
 
 REVIEW_STATUSES = ("needs_review", "in_review", "confirmed", "blocked")
@@ -66,6 +66,18 @@ def normalize_review_record(record):
         "reviewed_by": clean_review_text(record.get("reviewed_by")),
         "reviewed_at": clean_review_text(record.get("reviewed_at")),
         "source_update_url": clean_review_text(record.get("source_update_url")),
+        "source_confidence": clean_review_text(record.get("source_confidence")),
+        "last_verified": clean_review_text(record.get("last_verified")),
+        "data_gap_notes": clean_review_text(record.get("data_gap_notes")),
+        "owner_contact": clean_review_text(record.get("owner_contact")),
+        "utilities": clean_review_text(record.get("utilities")),
+        "zoning_entitlement": clean_review_text(record.get("zoning_entitlement")),
+        "acres": clean_review_text(record.get("acres")),
+        "rail_served": clean_review_text(record.get("rail_served")),
+        "nearby_class1": clean_review_text(record.get("nearby_class1")),
+        "transload_available": clean_review_text(record.get("transload_available")),
+        "interstate_access": clean_review_text(record.get("interstate_access")),
+        "port_access": clean_review_text(record.get("port_access")),
     }
 
 
@@ -110,14 +122,46 @@ def save_review_store(filepath, review_store):
 def merge_review_record(site, review_store):
     """Attach review workflow fields to one site row without mutating source data."""
     merged = site.copy()
-    persisted = normalize_review_record(review_store.get(site.get("site_name", ""), {}))
+    raw_persisted = review_store.get(site.get("site_name", ""))
+    has_persisted_review = isinstance(raw_persisted, dict)
+    persisted = normalize_review_record(raw_persisted or {})
     status = persisted.get("review_status") or default_review_status(site)
-    merged.update(persisted)
+    if has_persisted_review:
+        for field in (
+            "source_confidence",
+            "last_verified",
+            "data_gap_notes",
+            "owner_contact",
+            "utilities",
+            "zoning_entitlement",
+            "acres",
+            "rail_served",
+            "nearby_class1",
+            "transload_available",
+            "interstate_access",
+            "port_access",
+        ):
+            merged[field] = persisted[field]
+        if persisted.get("source_update_url"):
+            merged["source_url"] = persisted["source_update_url"]
+    for field in (
+        "review_status",
+        "review_notes",
+        "reviewed_by",
+        "reviewed_at",
+        "source_update_url",
+    ):
+        merged[field] = persisted[field]
     merged["review_status"] = status
     merged["review_status_label"] = review_status_label(status)
     merged["review_status_tone"] = review_status_tone(status)
-    merged["ready_for_outreach"] = status == "confirmed"
+    merged["data_quality_flags"] = site_gap_flags(merged)
+    merged["needs_confirmation"] = bool(merged["data_quality_flags"])
     merged["research_readiness"] = build_research_readiness(merged)
+    merged["ready_for_outreach"] = (
+        status == "confirmed"
+        and merged["research_readiness"].get("label") == "Research Ready"
+    )
     return merged
 
 
@@ -126,7 +170,26 @@ def merge_review_records(sites, review_store):
     return [merge_review_record(site, review_store) for site in sites]
 
 
-def build_review_update(existing_record, status, notes="", reviewed_by="", source_update_url="", reviewed_at=None):
+def build_review_update(
+    existing_record,
+    status,
+    notes="",
+    reviewed_by="",
+    source_update_url="",
+    reviewed_at=None,
+    source_confidence="",
+    last_verified="",
+    data_gap_notes="",
+    owner_contact="",
+    utilities="",
+    zoning_entitlement="",
+    acres="",
+    rail_served="",
+    nearby_class1="",
+    transload_available="",
+    interstate_access="",
+    port_access="",
+):
     """Build a validated review update record from form input."""
     existing = normalize_review_record(existing_record)
     status = validate_review_status(status)
@@ -136,5 +199,17 @@ def build_review_update(existing_record, status, notes="", reviewed_by="", sourc
         "reviewed_by": clean_review_text(reviewed_by),
         "reviewed_at": reviewed_at or datetime.now().isoformat(timespec="seconds"),
         "source_update_url": clean_review_text(source_update_url),
+        "source_confidence": clean_review_text(source_confidence),
+        "last_verified": clean_review_text(last_verified),
+        "data_gap_notes": clean_review_text(data_gap_notes),
+        "owner_contact": clean_review_text(owner_contact),
+        "utilities": clean_review_text(utilities),
+        "zoning_entitlement": clean_review_text(zoning_entitlement),
+        "acres": clean_review_text(acres),
+        "rail_served": clean_review_text(rail_served),
+        "nearby_class1": clean_review_text(nearby_class1),
+        "transload_available": clean_review_text(transload_available),
+        "interstate_access": clean_review_text(interstate_access),
+        "port_access": clean_review_text(port_access),
     })
     return existing

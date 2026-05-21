@@ -1,11 +1,16 @@
 """Tests for the OmniMapping Flask dashboard."""
 
 import contextlib
+import csv
+import html
 import io
+import json
 import os
+import re
 import sys
 import tempfile
 import unittest
+from urllib.parse import urlsplit
 
 from flask import request
 
@@ -20,6 +25,12 @@ from dashboard import (
     build_opportunity_map,
     build_map_filter_options,
     build_site_scan_summary,
+    build_company_view_presets,
+    build_site_view_presets,
+    annotate_companies_with_readiness,
+    build_command_center,
+    build_opportunity_pipeline,
+    build_verification_queue,
     build_supply_chain_filter_options,
     build_supply_chain_scan_summary,
     create_app,
@@ -196,12 +207,17 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Ranked Companies', body)
         self.assertIn('Acme Chemicals', body)
         self.assertNotIn('Front Range Logistics', body)
+        self.assertIn('Human review', body)
+        self.assertIn('Hold for verification', body)
         self.assertIn('/companies/Acme%20Chemicals', body)
         self.assertIn('/downloads/top-companies.csv', body)
         self.assertIn('/downloads/top-companies.json', body)
         self.assertIn('Ready for outreach', body)
         self.assertIn('Apply Filters', body)
         self.assertIn('Workspace', body)
+        self.assertIn('Ready outreach', body)
+        self.assertIn('Verify site first', body)
+        self.assertIn('name="readiness"', body)
 
     def test_ranked_companies_quick_search_filters_exported_rows(self):
         response = self.client.get('/companies?q=Front%20Range')
@@ -211,14 +227,35 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Front Range Logistics', body)
         self.assertNotIn('Acme Chemicals', body)
 
-        _, companies, _, _ = self.loaded_data
+        _, companies, sites, _ = self.loaded_data
         self.assertTrue(all('best_lane_score' in company for company in companies))
         filtered = filter_companies_for_dashboard(companies, {'query': 'chemical inputs'})
         self.assertEqual([company['company'] for company in filtered], ['Acme Chemicals'])
 
         summary = build_company_scan_summary(filtered)
         self.assertEqual(summary['ready_for_outreach'], 0)
+        self.assertEqual(summary['external_review_required'], 0)
         self.assertEqual(summary['verify_site_first'], 1)
+
+        readiness_companies = annotate_companies_with_readiness(companies, sites)
+        readiness_filtered = filter_companies_for_dashboard(
+            readiness_companies,
+            {'query': '', 'readiness': VERIFY_SITE_LABEL, 'min_score': 70},
+        )
+        self.assertEqual([company['company'] for company in readiness_filtered], ['Acme Chemicals'])
+
+    def test_dashboard_view_presets_link_to_supported_filters(self):
+        company_presets = build_company_view_presets()
+        site_presets = build_site_view_presets()
+
+        self.assertTrue(any(
+            preset['params'].get('readiness') == VERIFY_SITE_LABEL
+            for preset in company_presets
+        ))
+        self.assertTrue(any(
+            preset['params'].get('needs_confirmation') == 'yes'
+            for preset in site_presets
+        ))
 
     def test_opportunity_map_payload_derives_nodes_and_filters(self):
         _, companies, sites, rail_infrastructure = self.loaded_data
@@ -767,11 +804,13 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Review Site', body)
         self.assertIn('site=Houston+Rail+Park', body)
 
-    def test_home_redirects_to_map_workspace(self):
+    def test_home_renders_command_center(self):
         response = self.client.get('/')
 
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers['Location'], '/map')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Command Center', body)
+        self.assertIn('Daily Workbench', body)
 
     def test_opportunity_map_apply_filters_query_changes_result_summary(self):
         response = self.client.get('/map?layers_submitted=1&state=TX&node_type=company&node_type=site')
@@ -831,6 +870,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Research Checklist', detail_body)
         self.assertIn('Research readiness', detail_body)
         self.assertIn('Verification Tasks', detail_body)
+        self.assertIn('Back to Site Verification', detail_body)
+        self.assertIn('Check Pipeline', detail_body)
         self.assertIn('Source URL present', detail_body)
         self.assertIn('Source confidence', detail_body)
         self.assertIn('Last verified', detail_body)
@@ -913,6 +954,19 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertTrue(readiness['actionable'])
         self.assertTrue(readiness['site_ready'])
 
+    def test_unified_readiness_requires_confirmed_and_research_ready_site(self):
+        _, companies, sites, _ = self.loaded_data
+        confirmed_incomplete_site = {
+            **sites[0],
+            'review_status': 'confirmed',
+        }
+        company = {**companies[0], 'priority_score': 95, 'best_site_match_score': 90, 'best_lane_score': 80}
+        readiness = build_opportunity_readiness(company, site=confirmed_incomplete_site)
+
+        self.assertEqual(readiness['label'], VERIFY_SITE_LABEL)
+        self.assertFalse(readiness['actionable'])
+        self.assertFalse(readiness['site_ready'])
+
     def test_opportunity_map_payload_reports_unmapped_records(self):
         _, companies, sites, rail_infrastructure = self.loaded_data
         unmapped_company = {
@@ -973,6 +1027,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
             reviewed_by='Alex',
             source_update_url='https://example.com/source',
             reviewed_at='2026-05-09T20:00:00',
+            owner_contact='City economic development contact listed.',
+            utilities='Electric, water, sewer available per listing.',
+            zoning_entitlement='Industrial use permitted.',
         )
         saved = save_review_store(self.review_store_path, {'Denver Industrial Yard': record})
         loaded = load_review_store(self.review_store_path)
@@ -980,6 +1037,9 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertEqual(saved, loaded)
         self.assertEqual(loaded['Denver Industrial Yard']['review_status'], 'in_review')
         self.assertEqual(loaded['Denver Industrial Yard']['reviewed_by'], 'Alex')
+        self.assertEqual(loaded['Denver Industrial Yard']['owner_contact'], 'City economic development contact listed.')
+        self.assertEqual(loaded['Denver Industrial Yard']['utilities'], 'Electric, water, sewer available per listing.')
+        self.assertEqual(loaded['Denver Industrial Yard']['zoning_entitlement'], 'Industrial use permitted.')
 
         with open(self.review_store_path, 'w') as review_file:
             review_file.write('{not-json')
@@ -1008,9 +1068,21 @@ class TestOmniMappingDashboard(unittest.TestCase):
     def test_site_review_update_route_persists_and_redirects(self):
         response = self.client.post('/sites/Denver%20Industrial%20Yard/review', data={
             'review_status': 'confirmed',
-            'review_notes': 'Acreage confirmed from public listing.',
+            'review_notes': 'Acreage, owner contact, utilities, and zoning confirmed from public listing.',
             'reviewed_by': 'Jordan',
             'source_update_url': 'https://example.com/denver-yard',
+            'source_confidence': 'High',
+            'last_verified': '2026-05-19',
+            'acres': '75',
+            'rail_served': 'Yes',
+            'nearby_class1': 'Yes',
+            'transload_available': 'No',
+            'interstate_access': 'Yes',
+            'port_access': 'No',
+            'data_gap_notes': '',
+            'owner_contact': 'Broker listed on public site sheet.',
+            'utilities': 'Power, water, and sewer shown as available.',
+            'zoning_entitlement': 'Industrial zoning shown as permitted use.',
         })
 
         self.assertEqual(response.status_code, 302)
@@ -1019,12 +1091,200 @@ class TestOmniMappingDashboard(unittest.TestCase):
         loaded = load_review_store(self.review_store_path)
         self.assertEqual(loaded['Denver Industrial Yard']['review_status'], 'confirmed')
         self.assertEqual(loaded['Denver Industrial Yard']['reviewed_by'], 'Jordan')
+        self.assertEqual(loaded['Denver Industrial Yard']['source_confidence'], 'High')
+        self.assertEqual(loaded['Denver Industrial Yard']['last_verified'], '2026-05-19')
+        self.assertEqual(loaded['Denver Industrial Yard']['acres'], '75')
         self.assertTrue(loaded['Denver Industrial Yard']['reviewed_at'])
+
+        _, _, sites, _ = self.loaded_data
+        reviewed_sites = merge_review_records(build_site_directory(sites), loaded)
+        denver_site = next(site for site in reviewed_sites if site['site_name'] == 'Denver Industrial Yard')
+        self.assertEqual(denver_site['research_readiness']['label'], 'Research Ready')
+        self.assertFalse(denver_site['research_readiness']['tasks'])
 
         detail_response = self.client.get('/sites/Denver%20Industrial%20Yard')
         detail_body = detail_response.get_data(as_text=True)
-        self.assertIn('Acreage confirmed from public listing.', detail_body)
+        self.assertIn('Acreage, owner contact, utilities, and zoning confirmed from public listing.', detail_body)
+        self.assertIn('Broker listed on public site sheet.', detail_body)
+        self.assertIn('Power, water, and sewer shown as available.', detail_body)
+        self.assertIn('Industrial zoning shown as permitted use.', detail_body)
         self.assertIn('Jordan', detail_body)
+        self.assertIn('Research Ready', detail_body)
+        self.assertIn('Ready to use', detail_body)
+
+    def test_site_review_save_redirect_shows_practical_feedback(self):
+        response = self.client.post('/sites/Houston%20Rail%20Park/review', data={
+            'review_status': 'confirmed',
+            'review_notes': 'Source URL checked but date and confidence still need a second pass.',
+            'reviewed_by': 'Jordan',
+            'source_update_url': 'https://example.com/houston-rail-park',
+            'source_confidence': '',
+            'last_verified': '',
+            'acres': '250',
+            'rail_served': 'Yes',
+            'nearby_class1': 'Yes',
+            'transload_available': 'Yes',
+            'interstate_access': 'Yes',
+            'port_access': 'Yes',
+            'data_gap_notes': '',
+        }, follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Review saved for Houston Rail Park', body)
+        self.assertIn('Status: Confirmed', body)
+        self.assertIn('Research readiness: Needs Verification', body)
+        self.assertIn('Remaining blocker count: 2', body)
+        self.assertIn('not usable for outreach yet', body)
+        self.assertIn('Review saved, but outreach is still blocked', body)
+        self.assertIn('data/review_status.json', body)
+        self.assertIn('Review Saved: Next Step', body)
+        self.assertIn('Continue Site Verification', body)
+        self.assertIn('Check Pipeline', body)
+
+    def test_verified_site_updates_pipeline_stage_and_exports(self):
+        response = self.client.post('/sites/Houston%20Rail%20Park/review', data={
+            'review_status': 'confirmed',
+            'review_notes': 'Owner contact, utilities, and zoning confirmed for outreach.',
+            'reviewed_by': 'Jordan',
+            'source_update_url': 'https://example.com/houston-rail-park',
+            'source_confidence': 'High',
+            'last_verified': '2026-05-19',
+            'acres': '250',
+            'rail_served': 'Yes',
+            'nearby_class1': 'Yes',
+            'transload_available': 'Yes',
+            'interstate_access': 'Yes',
+            'port_access': 'Yes',
+            'data_gap_notes': '',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        _, companies, sites, _ = self.loaded_data
+        with self.app.test_request_context('/pipeline'):
+            pipeline = build_opportunity_pipeline(
+                companies,
+                sites,
+                review_store_path=self.review_store_path,
+            )
+
+        ready_stage = next(stage for stage in pipeline['stages'] if stage['label'] == 'Outreach ready')
+        ready_items = {item['company']: item for item in ready_stage['items']}
+        self.assertIn('Acme Chemicals', ready_items)
+        self.assertEqual(ready_items['Acme Chemicals']['primary_action']['label'], 'Open Workspace')
+
+        with self.app.test_request_context('/verification'):
+            verification = build_verification_queue(
+                sites,
+                companies,
+                review_store_path=self.review_store_path,
+            )
+        self.assertNotIn(
+            'Houston Rail Park',
+            {item['site_name'] for item in verification['items']},
+        )
+
+        detail_response = self.client.get('/sites/Houston%20Rail%20Park?review_saved=1')
+        detail_body = detail_response.get_data(as_text=True)
+        self.assertIn('Research Ready: this site now flows downstream.', detail_body)
+        self.assertIn('Unlocked Opportunities', detail_body)
+        self.assertIn('Open Workspace', detail_body)
+        self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', detail_body)
+
+        workspace_response = self.client.get('/downloads/workspace.json?company=Acme%20Chemicals&site=Houston%20Rail%20Park')
+        try:
+            self.assertEqual(workspace_response.status_code, 200)
+            workspace_body = workspace_response.get_data(as_text=True)
+            self.assertIn('"label": "Research Ready"', workspace_body)
+            self.assertIn('"verification_tasks": []', workspace_body)
+        finally:
+            detail_response.close()
+            workspace_response.close()
+
+    def test_confirmed_but_incomplete_site_remains_in_verification_queue_with_blockers(self):
+        response = self.client.post('/sites/Houston%20Rail%20Park/review', data={
+            'review_status': 'confirmed',
+            'review_notes': 'Source URL checked but confidence and verification date are still open.',
+            'reviewed_by': 'Jordan',
+            'source_update_url': 'https://example.com/houston-rail-park',
+            'source_confidence': '',
+            'last_verified': '',
+            'acres': '250',
+            'rail_served': 'Yes',
+            'nearby_class1': 'Yes',
+            'transload_available': 'Yes',
+            'interstate_access': 'Yes',
+            'port_access': 'Yes',
+            'data_gap_notes': '',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        _, companies, sites, _ = self.loaded_data
+        with self.app.test_request_context('/verification'):
+            verification = build_verification_queue(
+                sites,
+                companies,
+                review_store_path=self.review_store_path,
+            )
+
+        houston = next(item for item in verification['items'] if item['site_name'] == 'Houston Rail Park')
+        self.assertEqual(houston['review_status_label'], 'Confirmed')
+        self.assertEqual(houston['readiness']['label'], 'Needs Verification')
+        self.assertEqual(houston['blocked_count'], 2)
+        self.assertIn('Review saved, but outreach is still blocked by 2 blockers.', houston['queue_note'])
+        self.assertTrue(any('last_verified' in task for task in houston['tasks']))
+        self.assertTrue(any('source_confidence' in task for task in houston['tasks']))
+
+        queue_response = self.client.get('/verification')
+        queue_body = queue_response.get_data(as_text=True)
+        self.assertIn('Confirmed', queue_body)
+        self.assertIn('Review saved, but outreach is still blocked by 2 blockers.', queue_body)
+
+    def test_verification_queue_prioritizes_blocked_records_above_incomplete_records(self):
+        _, companies, sites, _ = self.loaded_data
+        save_review_store(self.review_store_path, {
+            'Denver Industrial Yard': build_review_update(
+                {},
+                'blocked',
+                notes='Owner and acreage are blocked pending local follow-up.',
+                source_update_url='https://example.com/denver-yard',
+                source_confidence='Medium',
+                last_verified='2026-05-19',
+                acres='',
+                rail_served='Yes',
+                nearby_class1='Yes',
+                transload_available='No',
+                interstate_access='Yes',
+                port_access='No',
+                data_gap_notes='Owner will not confirm available acreage.',
+            ),
+            'Houston Rail Park': build_review_update(
+                {},
+                'in_review',
+                source_update_url='https://example.com/houston-rail-park',
+                source_confidence='',
+                last_verified='',
+                acres='250',
+                rail_served='Yes',
+                nearby_class1='Yes',
+                transload_available='Yes',
+                interstate_access='Yes',
+                port_access='Yes',
+                data_gap_notes='',
+            ),
+        })
+
+        with self.app.test_request_context('/verification'):
+            verification = build_verification_queue(
+                sites,
+                companies,
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(verification['items'][0]['site_name'], 'Denver Industrial Yard')
+        self.assertTrue(verification['items'][0]['is_blocked'])
+        self.assertEqual(verification['items'][1]['site_name'], 'Houston Rail Park')
+        self.assertFalse(verification['items'][1]['is_blocked'])
 
     def test_site_review_update_validates_site_and_status(self):
         missing_response = self.client.post('/sites/Not%20A%20Site/review', data={
@@ -1051,12 +1311,38 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('research_readiness', workspace)
         self.assertIn('opportunity_readiness', workspace)
         self.assertEqual(workspace['opportunity_readiness']['label'], VERIFY_SITE_LABEL)
+        self.assertEqual(workspace['external_use']['status'], 'Hold for verification')
+        self.assertTrue(workspace['external_use']['human_review_required'])
+        self.assertFalse(workspace['external_use']['outreach_usable'])
         self.assertIn('verification_tasks', workspace)
         self.assertGreater(workspace['lane']['lane_score'], 0)
         self.assertGreaterEqual(len(workspace['lane']['lane_reasons']), 1)
         self.assertGreaterEqual(len(workspace['site_match']['matching_reasons']), 1)
         self.assertGreaterEqual(len(workspace['talking_points']), 1)
         self.assertGreaterEqual(len(workspace['risks_or_data_gaps']), 1)
+
+    def test_workspace_external_use_guardrail_blocks_speculative_ready_records(self):
+        segments, companies, sites, _ = self.loaded_data
+        company = companies[0].copy()
+        company['why_target'] = 'Speculative prospect until a live expansion project is confirmed.'
+        site = sites[0].copy()
+        site.update({
+            'review_status': 'confirmed',
+            'source_url': 'https://example.com/houston-rail-park',
+            'source_confidence': 'High',
+            'last_verified': '2026-05-09',
+            'owner_contact': 'Economic development contact confirmed',
+            'utilities': 'Utilities confirmed',
+            'zoning_entitlement': 'Industrial zoning confirmed',
+            'data_gap_notes': '',
+        })
+
+        workspace = build_opportunity_workspace(company, site, segments)
+
+        self.assertEqual(workspace['research_readiness']['label'], 'Research Ready')
+        self.assertEqual(workspace['external_use']['status'], 'Internal review first')
+        self.assertTrue(workspace['external_use']['human_review_required'])
+        self.assertFalse(workspace['external_use']['outreach_usable'])
 
     def test_company_site_comparison_payload_ranks_sites_and_recommends_first_choice(self):
         segments, companies, sites, _ = self.loaded_data
@@ -1074,6 +1360,10 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertGreater(comparison['recommended_first_choice']['lane_score'], 0)
         self.assertIn('lane_readiness_label', comparison['recommended_first_choice'])
         self.assertIn('research_readiness_label', comparison['recommended_first_choice'])
+        self.assertIn('next_action', comparison['recommended_first_choice'])
+        self.assertIn('reason', comparison['recommended_first_choice'])
+        self.assertIn('blocked_count', comparison['recommended_first_choice'])
+        self.assertIn('verification_tasks', comparison['recommended_first_choice'])
         self.assertIn('research_readiness', comparison['compared_sites'][0])
         self.assertIn('opportunity_readiness', comparison['compared_sites'][0])
         self.assertIn('actionable', comparison['compared_sites'][0])
@@ -1098,6 +1388,8 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Readiness', body)
         self.assertIn('Opportunity readiness', body)
         self.assertIn('Research readiness', body)
+        self.assertIn('Next action:', body)
+        self.assertIn('What blocks it:', body)
         self.assertIn('Strong lane', body)
         self.assertIn('Risks / Confirm', body)
         self.assertIn('/workspace?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
@@ -1244,13 +1536,254 @@ class TestOmniMappingDashboard(unittest.TestCase):
         self.assertIn('Research Checklist', body)
         self.assertIn('Research readiness', body)
         self.assertIn('Opportunity readiness', body)
+        self.assertIn('External use', body)
+        self.assertIn('External Use Guardrail', body)
+        self.assertIn('Ready for outreach means ready to prepare the conversation', body)
         self.assertIn('Verification Tasks', body)
         self.assertIn('Strong lane', body)
         self.assertIn('Talking Points', body)
         self.assertIn('Risks And Data Gaps', body)
+        self.assertIn('Qualification Checklist', body)
+        self.assertIn('Material volumes', body)
+        self.assertIn('estimated annual volume', body)
+        self.assertIn('Lane fit', body)
+        self.assertIn('Site requirements', body)
         self.assertIn('/downloads/workspace.json?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
-        self.assertIn('/downloads/workspace.txt?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
+        self.assertIn('/workspace/brief?company=Acme+Chemicals&amp;site=Houston+Rail+Park', body)
         self.assertIn('/companies/Acme%20Chemicals/site-comparison', body)
+
+    def test_workspace_export_brief_preview_confirms_file_and_next_action_context(self):
+        response = self.client.get('/workspace/brief?company=Acme%20Chemicals&site=Houston%20Rail%20Park')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('Outreach Handoff', body)
+        self.assertIn('Outreach Brief', body)
+        self.assertIn('What This Is For', body)
+        self.assertIn('Executive Summary', body)
+        self.assertIn('Decision Gates', body)
+        self.assertIn('Brief Highlights', body)
+        self.assertIn('Before External Use', body)
+        self.assertIn('Evidence Snapshot', body)
+        self.assertIn('Questions To Answer', body)
+        self.assertIn('Full TXT Preview', body)
+        self.assertIn('Download TXT', body)
+        self.assertIn('Acme Chemicals', body)
+        self.assertIn('Houston Rail Park', body)
+        self.assertIn('Hold for verification', body)
+        self.assertIn('Verify site first', body)
+        self.assertIn('Needs Verification', body)
+        self.assertIn('Resolve before outreach', body)
+        self.assertIn('External use', body)
+        self.assertIn('Source confidence', body)
+        self.assertIn('Confirm contact target', body)
+        self.assertIn('What annual inbound and outbound volumes are realistic', body)
+        self.assertIn('Material volumes', body)
+        self.assertIn('Talking Points', body)
+        self.assertIn('Review Site', body)
+        exported_files = os.listdir(os.path.join(self.tempdir.name, 'exports'))
+        self.assertTrue(any(name.startswith('opportunity_brief_acme_chemicals_houston_rail_park') for name in exported_files))
+
+    def test_command_center_pipeline_and_verification_pages_render_workflow(self):
+        responses = [
+            self.client.get('/'),
+            self.client.get('/pipeline'),
+            self.client.get('/verification'),
+        ]
+        try:
+            self.assertEqual([response.status_code for response in responses], [200, 200, 200])
+            center_body = responses[0].get_data(as_text=True)
+            self.assertIn('Command Center', center_body)
+            self.assertIn('What To Do Today', center_body)
+            self.assertIn('Export Packet', center_body)
+            self.assertIn('Today: site verification', center_body)
+            self.assertIn('Use Pipeline for stage management and Site Verification for the full cleanup list.', center_body)
+            self.assertNotIn('<h2>Verification Queue</h2>', center_body)
+
+            pipeline_body = responses[1].get_data(as_text=True)
+            self.assertIn('Opportunity Pipeline', pipeline_body)
+            self.assertIn('Site verification', pipeline_body)
+            self.assertIn('Acme Chemicals', pipeline_body)
+            self.assertIn('Why this stage:', pipeline_body)
+            self.assertIn('External use:', pipeline_body)
+            self.assertIn('To advance:', pipeline_body)
+            self.assertIn('name="readiness"', pipeline_body)
+            self.assertIn('Apply Filters', pipeline_body)
+
+            verification_body = responses[2].get_data(as_text=True)
+            self.assertIn('Site Verification', verification_body)
+            self.assertIn('Houston Rail Park', verification_body)
+            self.assertIn('Top Blocker', verification_body)
+            self.assertIn('Outreach Unlock', verification_body)
+        finally:
+            for response in responses:
+                response.close()
+
+    def test_operating_layer_helpers_build_action_queues(self):
+        _, companies, sites, rail_infrastructure = self.loaded_data
+
+        with self.app.test_request_context('/'):
+            pipeline = build_opportunity_pipeline(
+                companies,
+                sites,
+                review_store_path=self.review_store_path,
+            )
+            verification = build_verification_queue(
+                sites,
+                companies,
+                review_store_path=self.review_store_path,
+            )
+            center = build_command_center(
+                companies,
+                sites,
+                rail_infrastructure,
+                review_store_path=self.review_store_path,
+            )
+
+        self.assertEqual(pipeline['total'], 2)
+        self.assertGreaterEqual(pipeline['summary']['site_verification'], 1)
+        self.assertGreaterEqual(verification['total'], 1)
+        self.assertTrue(center['today_work'])
+        action_urls = [item['primary_action']['url'] for item in center['today_work']]
+        self.assertEqual(len(action_urls), len(set(action_urls)))
+        self.assertTrue(all(item['why'] for item in center['today_work']))
+        self.assertIn('saved_views', center)
+        self.assertIn('verification', center)
+
+    def test_pipeline_filters_companies_by_stage_inputs(self):
+        _, companies, sites, _ = self.loaded_data
+
+        with self.app.test_request_context('/pipeline?state=TX&min_score=70'):
+            pipeline = build_opportunity_pipeline(
+                companies,
+                sites,
+                review_store_path=self.review_store_path,
+                filters={'state': 'TX', 'min_score': 70},
+            )
+
+        self.assertEqual(pipeline['total'], 1)
+        self.assertEqual(pipeline['unfiltered_total'], 2)
+        stage_companies = [
+            item['company']
+            for stage in pipeline['stages']
+            for item in stage['items']
+        ]
+        self.assertEqual(stage_companies, ['Acme Chemicals'])
+
+        response = self.client.get('/pipeline?state=TX&min_score=70')
+        try:
+            body = response.get_data(as_text=True)
+            self.assertIn('1 of 2 companies grouped', body)
+            self.assertIn('Acme Chemicals', body)
+            self.assertNotIn('Front Range Logistics', body)
+            self.assertIn('value="70"', body)
+        finally:
+            response.close()
+
+    def test_pipeline_groups_by_readiness_and_chooses_stage_actions(self):
+        _, companies, sites, _ = self.loaded_data
+        reviewed_sites = [
+            {
+                **sites[0],
+                'source_url': 'https://example.com/site',
+                'source_confidence': 'High',
+                'last_verified': '2026-05-09',
+                'data_gap_notes': '',
+                'review_status': 'confirmed',
+                'review_notes': 'owner utilities zoning',
+            },
+            sites[1],
+        ]
+        staged_companies = [
+            {**companies[0], 'priority_score': 95, 'best_site_match_score': 90, 'best_lane_score': 80},
+            {**companies[1], 'best_site_name': '', 'best_recommended_site': ''},
+        ]
+
+        with self.app.test_request_context('/pipeline'):
+            pipeline = build_opportunity_pipeline(staged_companies, reviewed_sites, limit_per_stage=10)
+
+        stages = {stage['label']: stage for stage in pipeline['stages']}
+        ready_item = stages['Outreach ready']['items'][0]
+        compare_item = stages['Site selection']['items'][0]
+
+        self.assertEqual(ready_item['primary_action']['label'], 'Open Workspace')
+        self.assertEqual(ready_item['readiness_label'], READY_LABEL)
+        self.assertIn('Prepare the selected company-site workspace', ready_item['advance_action'])
+        self.assertEqual(compare_item['primary_action']['label'], 'Compare Sites')
+        self.assertEqual(compare_item['readiness_label'], 'Compare sites')
+
+    def test_site_verification_keeps_confirmed_incomplete_and_sorts_blocked_first(self):
+        _, companies, sites, _ = self.loaded_data
+        save_review_store(self.review_store_path, {
+            'Houston Rail Park': build_review_update(
+                {},
+                'confirmed',
+                notes='Local review saved, but source and date are still missing.',
+                acres='250',
+                rail_served='Yes',
+                nearby_class1='Yes',
+                transload_available='Yes',
+                interstate_access='Yes',
+                port_access='Yes',
+            ),
+            'Denver Industrial Yard': build_review_update(
+                {},
+                'blocked',
+                notes='Availability blocked until owner confirms acreage.',
+            ),
+        })
+
+        with self.app.test_request_context('/verification'):
+            queue = build_verification_queue(sites, companies, review_store_path=self.review_store_path)
+
+        self.assertEqual(queue['items'][0]['site_name'], 'Denver Industrial Yard')
+        houston = next(item for item in queue['items'] if item['site_name'] == 'Houston Rail Park')
+        self.assertEqual(houston['review_status_label'], 'Confirmed')
+        self.assertGreater(houston['task_count'], 0)
+        self.assertIn('Review saved, but outreach is still blocked', houston['queue_note'])
+        self.assertTrue(houston['top_blocker'])
+        self.assertIn('unlock', houston['unlock_note'])
+
+    def test_site_detail_save_updates_pipeline_verification_workspace_and_exports(self):
+        post_response = self.client.post('/sites/Houston%20Rail%20Park/review', data={
+            'review_status': 'confirmed',
+            'review_notes': 'Confirmed owner, utilities, zoning, and active rail service.',
+            'reviewed_by': 'Test User',
+            'source_update_url': 'https://example.com/houston-rail-park',
+            'source_confidence': 'High',
+            'last_verified': '2026-05-09',
+            'data_gap_notes': '',
+            'acres': '250',
+            'rail_served': 'Yes',
+            'nearby_class1': 'Yes',
+            'transload_available': 'Yes',
+            'interstate_access': 'Yes',
+            'port_access': 'Yes',
+        }, follow_redirects=True)
+        self.assertEqual(post_response.status_code, 200)
+        self.assertIn('Site is usable for outreach', post_response.get_data(as_text=True))
+        post_response.close()
+
+        pipeline_response = self.client.get('/pipeline')
+        verification_response = self.client.get('/verification')
+        workspace_response = self.client.get('/workspace?company=Acme%20Chemicals&site=Houston%20Rail%20Park')
+        export_response = self.client.get('/downloads/workspace.json?company=Acme%20Chemicals&site=Houston%20Rail%20Park')
+        try:
+            self.assertIn('Ready for outreach', pipeline_response.get_data(as_text=True))
+            self.assertNotIn('Houston Rail Park', verification_response.get_data(as_text=True))
+            self.assertIn('Research checklist is current for outreach prep.', workspace_response.get_data(as_text=True))
+            payload = json.loads(export_response.get_data(as_text=True))
+            self.assertEqual(payload['research_readiness']['label'], 'Research Ready')
+            self.assertEqual(payload['opportunity_readiness']['label'], READY_LABEL)
+            self.assertEqual(payload['external_use']['status'], 'Ready for outreach prep')
+            self.assertFalse(payload['external_use']['human_review_required'])
+            self.assertTrue(payload['external_use']['outreach_usable'])
+            self.assertEqual(payload['verification_tasks'], [])
+        finally:
+            pipeline_response.close()
+            verification_response.close()
+            workspace_response.close()
+            export_response.close()
 
     def test_dashboard_download_routes_reuse_export_helpers(self):
         responses = [
@@ -1258,13 +1791,28 @@ class TestOmniMappingDashboard(unittest.TestCase):
             self.client.get('/downloads/top-companies.json?state=TX&limit=1'),
             self.client.get('/downloads/company/Acme%20Chemicals.json'),
             self.client.get('/downloads/site/Houston%20Rail%20Park.json'),
+            self.client.get('/downloads/opportunity-packet.txt'),
         ]
         try:
-            self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200])
+            self.assertEqual([response.status_code for response in responses], [200, 200, 200, 200, 200])
             self.assertIn('text/csv', responses[0].content_type)
             self.assertIn('application/json', responses[1].content_type)
             self.assertIn('application/json', responses[2].content_type)
             self.assertIn('application/json', responses[3].content_type)
+            self.assertIn('text/plain', responses[4].content_type)
+            csv_body = responses[0].get_data(as_text=True)
+            self.assertIn('opportunity_readiness_label', csv_body)
+            self.assertIn('site_readiness_label', csv_body)
+            json_body = responses[1].get_data(as_text=True)
+            self.assertIn('opportunity_readiness', json_body)
+            self.assertIn('site_profile', json_body)
+            site_report_body = responses[3].get_data(as_text=True)
+            self.assertIn('review_status', site_report_body)
+            self.assertIn('research_readiness', site_report_body)
+            packet_body = responses[4].get_data(as_text=True)
+            self.assertIn('OmniMapping Opportunity Packet', packet_body)
+            self.assertIn('Internal triage artifact', packet_body)
+            self.assertIn('Outreach Prep Candidates', packet_body)
         finally:
             for response in responses:
                 response.close()
@@ -1279,8 +1827,16 @@ class TestOmniMappingDashboard(unittest.TestCase):
             self.assertIn('application/json', responses[0].content_type)
             self.assertIn('text/plain', responses[1].content_type)
             self.assertIn('Acme Chemicals', responses[0].get_data(as_text=True))
-            self.assertIn('OPPORTUNITY BRIEF', responses[1].get_data(as_text=True))
-            self.assertIn('Houston Rail Park', responses[1].get_data(as_text=True))
+            brief_body = responses[1].get_data(as_text=True)
+            self.assertIn('OPPORTUNITY BRIEF', brief_body)
+            self.assertIn('Houston Rail Park', brief_body)
+            self.assertIn('REVIEWED READINESS CONTEXT', brief_body)
+            self.assertIn('Opportunity readiness: Verify site first', brief_body)
+            self.assertIn('Research readiness: Needs Verification', brief_body)
+            self.assertIn('Outreach usable: No', brief_body)
+            self.assertIn('External use status: Hold for verification', brief_body)
+            self.assertIn('Human review required: Yes', brief_body)
+            self.assertIn('Verification tasks:', brief_body)
         finally:
             for response in responses:
                 response.close()
@@ -1297,13 +1853,106 @@ class TestOmniMappingDashboard(unittest.TestCase):
             self.assertIn('recommended_first_choice', responses[0].get_data(as_text=True))
             csv_body = responses[1].get_data(as_text=True)
             self.assertIn('lane_score', csv_body)
+            self.assertIn('opportunity_readiness_label', csv_body)
             self.assertIn('research_readiness_label', csv_body)
+            self.assertIn('review_status', csv_body)
+            self.assertIn('source_confidence', csv_body)
+            self.assertIn('last_verified', csv_body)
+            self.assertIn('blocked_count', csv_body)
             self.assertIn('verification_tasks', csv_body)
             self.assertIn('Houston Rail Park', csv_body)
             self.assertIn('Denver Industrial Yard', csv_body)
         finally:
             for response in responses:
                 response.close()
+
+    def test_ranked_company_downloads_match_visible_filtered_state(self):
+        page_response = self.client.get('/companies?q=Front%20Range&readiness=Verify%20site%20first&limit=10')
+        csv_response = self.client.get('/downloads/top-companies.csv?q=Front%20Range&readiness=Verify%20site%20first&limit=10')
+        json_response = self.client.get('/downloads/top-companies.json?q=Front%20Range&readiness=Verify%20site%20first&limit=10')
+
+        try:
+            page_body = page_response.get_data(as_text=True)
+            csv_body = csv_response.get_data(as_text=True)
+            json_body = json_response.get_data(as_text=True)
+            csv_rows = list(csv.DictReader(io.StringIO(csv_body)))
+            json_payload = json.loads(json_body)
+
+            self.assertEqual(page_response.status_code, 200)
+            self.assertEqual(csv_response.status_code, 200)
+            self.assertEqual(json_response.status_code, 200)
+            self.assertIn('Front Range Logistics', page_body)
+            self.assertNotIn('Acme Chemicals', page_body)
+            self.assertIn('Front Range Logistics', csv_body)
+            self.assertNotIn('Acme Chemicals', csv_body)
+            self.assertIn('Front Range Logistics', json_body)
+            self.assertNotIn('Acme Chemicals', json_body)
+            self.assertIn('opportunity_readiness_label', csv_body)
+            self.assertIn('opportunity_readiness', json_body)
+            self.assertEqual([row['company'] for row in csv_rows], ['Front Range Logistics'])
+            self.assertEqual(
+                [item['company_profile']['company'] for item in json_payload['companies']],
+                ['Front Range Logistics'],
+            )
+            self.assertEqual(json_payload['export_info']['total_companies'], 1)
+            self.assertEqual(json_payload['export_info']['filtered_company_count'], 1)
+            dashboard_context = json_payload['export_info']['dashboard_context']
+            self.assertEqual(dashboard_context['source'], 'dashboard')
+            self.assertEqual(dashboard_context['view'], 'ranked_companies')
+            self.assertEqual(dashboard_context['source_company_count'], 2)
+            self.assertEqual(dashboard_context['dashboard_filtered_company_count'], 1)
+            self.assertEqual(dashboard_context['dashboard_exported_company_count'], 1)
+            self.assertTrue(dashboard_context['review_overlay_applied'])
+            self.assertEqual(dashboard_context['applied_filters']['query'], 'Front Range')
+            self.assertEqual(dashboard_context['applied_filters']['readiness'], VERIFY_SITE_LABEL)
+        finally:
+            page_response.close()
+            csv_response.close()
+            json_response.close()
+
+    def test_core_workflow_page_links_resolve(self):
+        pages = [
+            '/',
+            '/verification',
+            '/sites/Houston%20Rail%20Park',
+            '/pipeline',
+            '/companies/Acme%20Chemicals',
+            '/companies/Acme%20Chemicals/site-comparison',
+            '/workspace?company=Acme%20Chemicals&site=Houston%20Rail%20Park',
+            '/companies?state=TX&segment=Chemicals&commodity=chemicals&min_score=1',
+            '/sites?state=TX&port_access=Yes&transload_available=Yes&source_confidence=Unspecified',
+            '/map?state=TX&segment=Chemicals&commodity=chemicals&min_score=1',
+        ]
+        checked = set()
+
+        for page in pages:
+            response = self.client.get(page)
+            self.assertEqual(response.status_code, 200, page)
+            body = response.get_data(as_text=True)
+            response.close()
+
+            for raw_href in re.findall(r'href="([^"]+)"', body):
+                href = html.unescape(raw_href)
+                parsed = urlsplit(href)
+                if parsed.scheme or href.startswith('#') or href.startswith('mailto:'):
+                    continue
+                if parsed.path.startswith('/static/'):
+                    continue
+
+                route = href
+                if route in checked:
+                    continue
+                checked.add(route)
+                link_response = self.client.get(route)
+                try:
+                    self.assertLess(link_response.status_code, 400, f"{page} links to {route}")
+                finally:
+                    link_response.close()
+
+        self.assertIn('/pipeline', checked)
+        self.assertIn('/verification', checked)
+        self.assertIn('/workspace?company=Acme+Chemicals&site=Houston+Rail+Park', checked)
+        self.assertIn('/downloads/workspace.txt?company=Acme+Chemicals&site=Houston+Rail+Park', checked)
 
     def test_dashboard_health_route_reports_loaded_counts(self):
         response = self.client.get('/health')

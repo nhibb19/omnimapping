@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Site Verification - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-kicker">Data Confidence Workflow</div>
+    <h1>Site Verification</h1>
+    <p class="summary-note">{{ queue.total }} site records need source, acreage, logistics, or review confirmation before downstream outreach can be trusted.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('index') }}">Command Center</a>
+    <a class="button" href="{{ url_for('sites') }}">Industrial Sites</a>
+    <a class="button" href="{{ url_for('download_opportunity_packet') }}">Export Packet</a>
+  </div>
+</div>
+
+<section class="scan-strip" aria-label="Verification summary">
+  <div class="scan-item warning"><span class="muted">Blocked by gaps</span><strong>{{ queue.summary.blocked }}</strong></div>
+  <div class="scan-item review"><span class="muted">Need confirmation</span><strong>{{ queue.summary.needs_confirmation }}</strong></div>
+  <div class="scan-item review"><span class="muted">Missing sources</span><strong>{{ queue.summary.missing_sources }}</strong></div>
+  <div class="scan-item info"><span class="muted">Avg readiness</span><strong>{{ queue.summary.average_readiness }}</strong></div>
+</section>
+
+{% if queue['items'] %}
+  <table class="responsive-table">
+    <thead>
+      <tr>
+        <th>Site</th>
+        <th>Readiness</th>
+        <th>Review</th>
+        <th>Top Blocker</th>
+        <th>Affected Companies</th>
+        <th>Outreach Unlock</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in queue['items'] %}
+        <tr>
+          <td class="primary-cell">
+            <span class="mobile-label">Site</span>
+            <a href="{{ item.site_url }}"><strong>{{ item.site_name }}</strong></a>
+            <span class="subtle">{{ item.location }}</span>
+          </td>
+          <td>
+            <span class="mobile-label">Readiness</span>
+            <span class="score-chip {{ item.readiness.tone }}"><strong>{{ item.readiness.score }}</strong><span>{{ item.readiness.label }}</span></span>
+          </td>
+          <td>
+            <span class="mobile-label">Review</span>
+            <span class="pill {{ item.review_status_tone }}">{{ item.review_status_label }}</span>
+            <span class="subtle">{{ item.blocked_count }} blockers, {{ item.task_count }} tasks</span>
+          </td>
+          <td class="wide-cell">
+            <span class="mobile-label">Top Blocker</span>
+            {{ item.top_blocker }}
+            <span class="subtle">{{ item.queue_note }}</span>
+            {% if item.flags %}<span class="subtle">{{ item.flags | join(', ') }}</span>{% endif %}
+          </td>
+          <td>
+            <span class="mobile-label">Affected Companies</span>
+            {% if item.top_company %}
+              <a href="{{ item.company_url }}">{{ item.top_company }}</a>
+              <span class="subtle">{{ item.top_company_score }}/100 compatibility</span>
+              <span class="subtle">{{ item.affected_company_count }} {% if item.affected_company_count == 1 %}company{% else %}companies{% endif %} at 50+ compatibility</span>
+            {% else %}
+              <span class="muted">No company match</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="mobile-label">Outreach Unlock</span>
+            <span class="pill {{ 'positive' if item.unlocks_outreach else 'neutral' }}">{{ 'Can unlock outreach' if item.unlocks_outreach else 'Improves trust' }}</span>
+            <span class="subtle">{{ item.unlock_note }}</span>
+          </td>
+          <td class="action-cell">
+            <span class="mobile-label">Actions</span>
+            <div class="action-stack">
+              <a class="button primary small" href="{{ item.site_url }}">Review Site</a>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="empty">
+    <strong>No site verification items are currently open.</strong>
+    <div>Cleared sites remain available in Industrial Sites, Pipeline, Workspace, comparisons, and exports.</div>
+  </div>
+{% endif %}
+{% endblock %}

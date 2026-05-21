@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Outreach Brief - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-kicker">Outreach Handoff</div>
+    <h1>Outreach Brief</h1>
+    <p class="summary-note">{{ workspace.company.company }} + {{ workspace.site.site_name }}. Use this page to decide what the brief is safe for, pressure-test the outreach story, and download the TXT only after the evidence checks out.</p>
+  </div>
+  <div class="actions">
+    <a class="button primary" href="{{ url_for('download_workspace_txt', company=workspace.company.company, site=workspace.site.site_name) }}">Download TXT</a>
+    <a class="button" href="{{ url_for('opportunity_workspace', company=workspace.company.company, site=workspace.site.site_name) }}">Back to Workspace</a>
+    <a class="button" href="{{ url_for('company_site_comparison', company_name=workspace.company.company) }}">Compare Sites</a>
+  </div>
+</div>
+
+<section class="scan-strip" aria-label="Brief export summary">
+  <div class="scan-item {{ handoff.external_tone }}"><span class="muted">Use status</span><strong>{{ handoff.external_status }}</strong></div>
+  <div class="scan-item {{ workspace.opportunity_readiness.tone }}"><span class="muted">Opportunity</span><strong>{{ workspace.opportunity_readiness.label }}</strong></div>
+  <div class="scan-item {{ workspace.research_readiness.tone }}"><span class="muted">Research</span><strong>{{ workspace.research_readiness.label }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Brief file</span><strong>{{ export_filename }}</strong></div>
+</section>
+
+<div class="brief-layout">
+  <div>
+    <section class="section brief-purpose">
+      <div class="section-head">
+        <div>
+          <h2>What This Is For</h2>
+          <p class="summary-note">This is the handoff between analysis and outreach prep. It is not a finished email; it is the internal brief that tells you whether the opportunity is ready, what evidence supports it, and what must be confirmed before external use.</p>
+        </div>
+      </div>
+      <div class="brief-decision">
+        <span class="pill {{ handoff.external_tone }}">{{ handoff.external_status }}</span>
+        <strong>{{ workspace.opportunity_readiness.next_action }}</strong>
+        <p>{{ handoff.external_note }}</p>
+      </div>
+      {% if workspace.verification_tasks %}
+        <div class="gap-note">
+          <strong>Resolve before outreach:</strong> {{ workspace.verification_tasks[0] }}
+        </div>
+        <div class="actions">
+          <a class="button primary small" href="{{ url_for('site_detail', site_name=workspace.site.site_name) }}">Review Site</a>
+          <a class="button small" href="{{ url_for('company_site_comparison', company_name=workspace.company.company) }}">Compare Sites</a>
+        </div>
+      {% else %}
+        <div class="gap-note neutral">
+          <strong>Ready to use:</strong> No research blockers remain in the current checklist. Confirm outreach timing and contact owner before sending externally.
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="section">
+      <h2>Executive Summary</h2>
+      <p class="brief-summary">{{ handoff.executive_summary }}</p>
+      {% if handoff.has_speculative_context %}
+        <div class="gap-note">
+          <strong>Internal-use guardrail:</strong> This prospect includes speculative language. Validate the active need and decision-maker before sending externally.
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="section">
+      <h2>Decision Gates</h2>
+      <div class="brief-gate-grid">
+        {% for gate in handoff.decision_gates %}
+          <div class="metric">
+            <span class="muted">{{ gate.label }}</span>
+            <strong>{{ gate.value }}</strong>
+            <span class="pill {{ gate.tone }}">{{ gate.status }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Brief Highlights</h2>
+      <div class="brief-highlight-grid">
+        <div class="metric"><span class="muted">Company</span><strong>{{ workspace.company.company }}</strong><span>{{ workspace.company.segment }} | {{ workspace.company.location }}</span></div>
+        <div class="metric"><span class="muted">Site</span><strong>{{ workspace.site.site_name }}</strong><span>{{ workspace.site.location }} | {{ workspace.site.acres or 'Unknown' }} acres</span></div>
+        <div class="metric"><span class="muted">Priority</span><strong>{{ workspace.priority.score }}/100</strong><span class="pill {{ score_tone(workspace.priority.score) }}">{{ priority_label(workspace.priority.score) }}</span></div>
+        <div class="metric"><span class="muted">Site fit</span><strong>{{ workspace.site_match.compatibility_score }}/100</strong><span class="pill {{ score_tone(workspace.site_match.compatibility_score) }}">{{ match_label(workspace.site_match.compatibility_score) }}</span></div>
+        <div class="metric"><span class="muted">Lane</span><strong>{{ workspace.lane.lane_score }}/100</strong><span>{{ workspace.lane.lane_readiness_label }}</span></div>
+        <div class="metric"><span class="muted">Research</span><strong>{{ workspace.research_readiness.score }}/100</strong><span class="pill {{ workspace.research_readiness.tone }}">{{ workspace.research_readiness.label }}</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Talking Points</h2>
+      <ul class="clean">
+        {% for point in workspace.talking_points %}
+          <li>{{ point }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Questions To Answer</h2>
+      <ul class="clean">
+        {% for question in handoff.questions %}
+          <li>{{ question }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <details class="section collapsible-section">
+      <summary>
+        <h2>Full TXT Preview</h2>
+        <p class="summary-note">Open this when you want to inspect the exact downloaded text.</p>
+      </summary>
+      <div class="collapsible-body">
+        <pre class="export-preview">{{ brief_text }}</pre>
+      </div>
+    </details>
+  </div>
+
+  <aside>
+    <section class="section">
+      <h2>Before External Use</h2>
+      <ul class="clean">
+        {% for item in handoff.send_checklist %}
+          <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Evidence Snapshot</h2>
+      <div class="breakdown single-column">
+        {% for item in handoff.evidence %}
+          <div class="breakdown-row">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Qualification Checklist</h2>
+      <div class="breakdown single-column">
+        {% for item in workspace.qualification_checklist %}
+          <div class="breakdown-row">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.action }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Research Status</h2>
+      {% if workspace.verification_tasks %}
+        <ul class="clean">
+          {% for task in workspace.verification_tasks %}
+            <li>{{ task }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>Research checklist is current for outreach prep.</p>
+      {% endif %}
+    </section>
+
+    <section class="section">
+      <h2>File Details</h2>
+      <p><strong>{{ export_filename }}</strong></p>
+      <p class="muted">Saved in the dashboard export folder. Use Download TXT for the latest generated copy.</p>
+      <div class="actions">
+        <a class="button primary small" href="{{ url_for('download_workspace_txt', company=workspace.company.company, site=workspace.site.site_name) }}">Download TXT</a>
+        <a class="button small" href="{{ url_for('download_workspace_json', company=workspace.company.company, site=workspace.site.site_name) }}">Download JSON</a>
+      </div>
+    </section>
+  </aside>
+</div>
+{% endblock %}

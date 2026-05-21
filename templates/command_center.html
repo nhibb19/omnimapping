@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Command Center - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-kicker">Daily Workbench</div>
+    <h1>Command Center</h1>
+    <p class="summary-note">A short daily triage list answering what to do next and why it matters.</p>
+  </div>
+  <div class="actions">
+    <a class="button primary" href="{{ url_for('opportunity_pipeline') }}">Open Pipeline</a>
+    <a class="button" href="{{ url_for('verification_queue') }}">Site Verification</a>
+    <a class="button" href="{{ url_for('download_opportunity_packet') }}">Export Packet</a>
+  </div>
+</div>
+
+<section class="scan-strip" aria-label="Command center summary">
+  <div class="scan-item review"><span class="muted">Today</span><strong>{{ center.today_work|length }}</strong></div>
+  <div class="scan-item positive"><span class="muted">Outreach prep</span><strong>{{ center.pipeline.summary.outreach_ready }}</strong></div>
+  <div class="scan-item review"><span class="muted">Site verification</span><strong>{{ center.pipeline.summary.site_verification }}</strong></div>
+  <div class="scan-item warning"><span class="muted">Site cleanup</span><strong>{{ center.verification.total }}</strong></div>
+</section>
+
+<div class="command-grid">
+  <div>
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>What To Do Today</h2>
+          <p class="summary-note">Compact priorities only. Use Pipeline for stage management and Site Verification for the full cleanup list.</p>
+        </div>
+      </div>
+      {% if center.today_work %}
+        {% for item in center.today_work %}
+          <article class="work-item">
+            <div class="pill-row">
+              {% for pill in item.pills %}
+                <span class="pill {{ item.tone }}">{{ pill }}</span>
+              {% endfor %}
+            </div>
+            <h3>{{ item.title }}</h3>
+            <p>{{ item.subtitle }}</p>
+            <p class="muted">{{ item.why }}</p>
+            <div class="actions">
+              <a class="button small primary" href="{{ item.primary_action.url }}">{{ item.primary_action.label }}</a>
+            </div>
+          </article>
+        {% endfor %}
+      {% else %}
+        <div class="empty compact-empty">
+          <strong>No urgent work is queued.</strong>
+          <div>Open the Pipeline to choose the next opportunity stage, or Site Verification to review cleared and incomplete site records.</div>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside>
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <h2>Shortcuts</h2>
+          <p class="summary-note">Saved paths that support immediate work.</p>
+        </div>
+      </div>
+      <div class="view-presets" aria-label="Saved views">
+        {% for view in center.saved_views[:4] %}
+          <a class="preset-link" href="{{ view.url }}">
+            <strong>{{ view.label }}</strong>
+            <span>{{ view.description }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  </aside>
+</div>
+{% endblock %}

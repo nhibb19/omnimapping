@@ -10,7 +10,7 @@ import os
 import sys
 from datetime import datetime
 
-from flask import Flask, abort, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, send_file, url_for
 
 from config import CITY_COORDINATES
 from main import load_data
@@ -60,6 +60,7 @@ from modules.opportunity_readiness import (
     annotate_company_opportunity_readiness,
     best_site_name as opportunity_best_site_name,
     build_opportunity_readiness,
+    readiness_next_action,
 )
 from modules.ui import (
     format_company_context,
@@ -181,6 +182,31 @@ def get_company_filter_args(args):
         'segment': str(args.get('segment', '')).strip() or None,
         'commodity': str(args.get('commodity', '')).strip() or None,
         'min_score': parse_min_score(args.get('min_score')),
+        'readiness': str(args.get('readiness', '')).strip() or None,
+    }
+
+
+def build_dashboard_export_context(filters, total_count, filtered_count, exported_count):
+    """Describe the dashboard view that produced an export."""
+    return {
+        'source': 'dashboard',
+        'view': 'ranked_companies',
+        'applied_filters': {
+            'query': filters.get('query'),
+            'state': filters.get('state'),
+            'segment': filters.get('segment'),
+            'commodity': filters.get('commodity'),
+            'min_score': filters.get('min_score'),
+            'readiness': filters.get('readiness'),
+        },
+        'source_company_count': total_count,
+        'dashboard_filtered_company_count': filtered_count,
+        'dashboard_exported_company_count': exported_count,
+        'review_overlay_applied': True,
+        'filter_note': (
+            'Counts reflect the dashboard view after search, readiness, score, '
+            'state, segment, and commodity filters are applied.'
+        ),
     }
 
 
@@ -193,7 +219,65 @@ def build_filter_options(companies):
             company.get('commodity_type') or company.get('commodity')
             for company in companies
         ),
+        'readinesses': [
+            READY_LABEL,
+            VERIFY_SITE_LABEL,
+            COMPARE_SITES_LABEL,
+            QUALIFY_FIT_LABEL,
+        ],
     }
+
+
+def build_company_view_presets():
+    """Return one-click dashboard presets for common company review queues."""
+    return [
+        {
+            'label': 'Ready outreach',
+            'description': 'High-priority companies with a site ready enough to start outreach.',
+            'params': {'readiness': READY_LABEL, 'min_score': 70},
+        },
+        {
+            'label': 'Verify site first',
+            'description': 'Strong prospects blocked by site source or data confirmation work.',
+            'params': {'readiness': VERIFY_SITE_LABEL},
+        },
+        {
+            'label': 'Compare sites',
+            'description': 'Companies that need a better first-choice site decision.',
+            'params': {'readiness': COMPARE_SITES_LABEL},
+        },
+        {
+            'label': 'Qualified fit review',
+            'description': 'Prospects that need a human check before outreach.',
+            'params': {'readiness': QUALIFY_FIT_LABEL},
+        },
+    ]
+
+
+def build_site_view_presets():
+    """Return one-click dashboard presets for common site review queues."""
+    return [
+        {
+            'label': 'Research ready',
+            'description': 'Confirmed site records ready for opportunity matching.',
+            'params': {'review_status': 'confirmed'},
+        },
+        {
+            'label': 'Site verification',
+            'description': 'Sites that still need validation or review follow-up.',
+            'params': {'review_status': 'needs_review'},
+        },
+        {
+            'label': 'Needs confirmation',
+            'description': 'Records with acreage, source, or logistics details to confirm.',
+            'params': {'needs_confirmation': 'yes'},
+        },
+        {
+            'label': 'Transload sites',
+            'description': 'Sites with transload availability visible in the current data.',
+            'params': {'transload_available': 'Yes'},
+        },
+    ]
 
 
 def build_site_filter_options(sites):
@@ -275,13 +359,22 @@ def filter_companies_for_dashboard(companies, filters):
     """Apply dashboard-only search, then reuse ranked-company filters."""
     query = filters.get('query')
     filtered = [company for company in companies if company_matches_query(company, query)]
-    return filter_ranked_companies(
+    filtered = filter_ranked_companies(
         filtered,
         state=filters.get('state'),
         segment=filters.get('segment'),
         commodity=filters.get('commodity'),
         min_score=filters.get('min_score'),
     )
+    if filters.get('readiness'):
+        filtered = [
+            company for company in filtered
+            if (
+                company.get('readiness_label')
+                or (company.get('opportunity_readiness') or build_opportunity_readiness(company)).get('label')
+            ) == filters['readiness']
+        ]
+    return filtered
 
 
 def build_company_scan_summary(companies):
@@ -310,8 +403,18 @@ def build_company_scan_summary(companies):
         company for company in companies
         if readiness_labels.get(company.get('company', '')) == QUALIFY_FIT_LABEL
     ]
+    external_review_required = [
+        company for company in companies
+        if (company.get('external_use') or {}).get('human_review_required')
+    ]
+    outreach_usable = [
+        company for company in companies
+        if (company.get('external_use') or {}).get('outreach_usable')
+    ]
     return {
         'ready_for_outreach': len(ready_for_outreach),
+        'outreach_usable': len(outreach_usable),
+        'external_review_required': len(external_review_required),
         'verify_site_first': len(verify_site),
         'needs_site_review': len(missing_best_site),
         'qualify_fit': len(qualify_fit),
@@ -341,10 +444,26 @@ def annotate_companies_with_readiness(companies, sites, review_store_path=None):
     annotated = []
     for company in companies:
         site_name = company_best_site_name(company)
-        annotated.append(annotate_company_opportunity_readiness(
+        site = sites_by_name.get(site_name) if site_name else None
+        annotated_company = annotate_company_opportunity_readiness(
             company,
-            site=sites_by_name.get(site_name) if site_name else None,
-        ))
+            site=site,
+        )
+        if site:
+            research_readiness = build_research_readiness(
+                site,
+                company=company,
+                compatibility_score=safe_score(company.get('best_site_match_score', 0)),
+            )
+            verification_tasks = research_readiness.get('tasks', [])
+        else:
+            verification_tasks = []
+        annotated_company['external_use'] = build_workspace_external_use_guardrail(
+            company,
+            annotated_company.get('opportunity_readiness', {}),
+            verification_tasks,
+        )
+        annotated.append(annotated_company)
     return annotated
 
 
@@ -374,6 +493,548 @@ def build_site_scan_summary(sites):
         'rail_transload': len(rail_transload_sites),
         'high_confidence': len(high_confidence_sites),
     }
+
+
+PIPELINE_STAGES = [
+    {
+        'key': 'outreach_ready',
+        'label': 'Outreach ready',
+        'readiness': READY_LABEL,
+        'tone': 'positive',
+        'description': 'Company, site, lane, and research signals are aligned.',
+    },
+    {
+        'key': 'site_verification',
+        'label': 'Site verification',
+        'readiness': VERIFY_SITE_LABEL,
+        'tone': 'review',
+        'description': 'Strong prospects waiting on site source or data confirmation.',
+    },
+    {
+        'key': 'site_selection',
+        'label': 'Site selection',
+        'readiness': COMPARE_SITES_LABEL,
+        'tone': 'warning',
+        'description': 'Prospects that need a clearer first-choice site.',
+    },
+    {
+        'key': 'qualification',
+        'label': 'Qualification',
+        'readiness': QUALIFY_FIT_LABEL,
+        'tone': 'review',
+        'description': 'Promising fits that need a human check on timing, lane, or need.',
+    },
+    {
+        'key': 'monitor',
+        'label': 'Monitor',
+        'readiness': 'Monitor',
+        'tone': 'neutral',
+        'description': 'Lower-signal records to revisit later.',
+    },
+]
+
+
+def pipeline_stage_for_readiness(readiness_label):
+    """Return the display stage for a readiness label."""
+    return next(
+        (stage for stage in PIPELINE_STAGES if stage['readiness'] == readiness_label),
+        PIPELINE_STAGES[-1],
+    )
+
+
+def build_opportunity_explanation(company, site=None):
+    """Build a compact plain-English explanation for an opportunity."""
+    readiness = company.get('opportunity_readiness') or build_opportunity_readiness(
+        company,
+        site=site,
+    )
+    priority_reasons = get_priority_reasons(company)[:3]
+    site_name = company_best_site_name(company)
+    reasons = list(priority_reasons)
+    if site_name:
+        reasons.append(f"Best current site match: {site_name}.")
+    if site:
+        research = site.get('research_readiness') or build_research_readiness(site, company=company)
+        reasons.append(
+            f"Site research status: {research.get('label', 'Needs review')} "
+            f"({safe_score(research.get('score', 0))}/100)."
+        )
+    blocker = readiness.get('reason') or 'Review the opportunity before taking action.'
+    return {
+        'headline': readiness.get('next_action') or 'Review the opportunity before taking action.',
+        'why': reasons or ['Priority score, site match, and lane fit should be reviewed together.'],
+        'blocker': blocker,
+    }
+
+
+def pipeline_stage_advancement(readiness_label):
+    """Return the concrete thing that moves one pipeline stage forward."""
+    return {
+        READY_LABEL: 'Prepare the selected company-site workspace and export the outreach brief.',
+        VERIFY_SITE_LABEL: 'Clear the site blocker in Site Verification or the Site Detail review form.',
+        COMPARE_SITES_LABEL: 'Choose a defensible first-choice site from the comparison view.',
+        QUALIFY_FIT_LABEL: 'Confirm company timing, material flow, and lane assumptions in the workspace.',
+        'Monitor': 'Wait for stronger project, site, or lane signals before active outreach.',
+    }.get(readiness_label, 'Review the record and choose the next workflow step.')
+
+
+def choose_pipeline_item_actions(readiness_label, urls):
+    """Choose one primary workflow action and a short secondary set for a pipeline card."""
+    if readiness_label == READY_LABEL and urls.get('workspace_url'):
+        primary = {'label': 'Open Workspace', 'url': urls['workspace_url']}
+        secondary = [
+            {'label': 'Review Company', 'url': urls.get('company_url')},
+            {'label': 'Review Site', 'url': urls.get('site_url')},
+        ]
+    elif readiness_label == VERIFY_SITE_LABEL and urls.get('site_url'):
+        primary = {'label': 'Review Site', 'url': urls['site_url']}
+        secondary = [
+            {'label': 'Open Workspace', 'url': urls.get('workspace_url')},
+            {'label': 'Compare Sites', 'url': urls.get('compare_url')},
+        ]
+    elif readiness_label == COMPARE_SITES_LABEL and urls.get('compare_url'):
+        primary = {'label': 'Compare Sites', 'url': urls['compare_url']}
+        secondary = [
+            {'label': 'Review Company', 'url': urls.get('company_url')},
+            {'label': 'Review Site', 'url': urls.get('site_url')},
+        ]
+    elif readiness_label == QUALIFY_FIT_LABEL and urls.get('workspace_url'):
+        primary = {'label': 'Open Workspace', 'url': urls['workspace_url']}
+        secondary = [
+            {'label': 'Compare Sites', 'url': urls.get('compare_url')},
+            {'label': 'Review Company', 'url': urls.get('company_url')},
+        ]
+    else:
+        primary = {'label': 'Review Company', 'url': urls.get('company_url')}
+        secondary = [
+            {'label': 'Compare Sites', 'url': urls.get('compare_url')},
+            {'label': 'Review Site', 'url': urls.get('site_url')},
+        ]
+
+    return {
+        'primary': primary if primary.get('url') else None,
+        'secondary': [action for action in secondary if action.get('url') and action.get('url') != primary.get('url')],
+    }
+
+
+def build_opportunity_pipeline(companies, sites, review_store_path=None, limit_per_stage=12, filters=None):
+    """Build a practical company-site pipeline from existing readiness signals."""
+    annotated_companies = annotate_companies_with_readiness(
+        companies,
+        sites,
+        review_store_path=review_store_path,
+    )
+    filters = filters or {}
+    filtered_companies = filter_companies_for_dashboard(annotated_companies, filters)
+    sites_by_name = build_site_lookup(sites, review_store_path=review_store_path)
+    stages = [
+        {
+            **stage,
+            'items': [],
+            'count': 0,
+        }
+        for stage in PIPELINE_STAGES
+    ]
+    stage_by_readiness = {stage['readiness']: stage for stage in stages}
+
+    for company in filtered_companies:
+        stage = stage_by_readiness.get(
+            company.get('readiness_label'),
+            stages[-1],
+        )
+        site_name = company_best_site_name(company)
+        site = sites_by_name.get(site_name) if site_name else None
+        explanation = build_opportunity_explanation(company, site=site)
+        external_use = company.get('external_use') or build_workspace_external_use_guardrail(
+            company,
+            company.get('opportunity_readiness') or build_opportunity_readiness(company, site=site),
+            (site.get('research_readiness') or build_research_readiness(site)).get('tasks', []) if site else [],
+        )
+        urls = {
+            'company_url': url_for('company_detail', company_name=company.get('company', '')),
+            'compare_url': url_for('company_site_comparison', company_name=company.get('company', '')),
+            'workspace_url': url_for('opportunity_workspace', company=company.get('company', ''), site=site_name) if site_name else '',
+            'site_url': url_for('site_detail', site_name=site_name) if site_name else '',
+        }
+        actions = choose_pipeline_item_actions(company.get('readiness_label'), urls)
+        item = {
+            'company': company.get('company', ''),
+            'state': company.get('state', ''),
+            'segment': company.get('segment', ''),
+            'commodity': company.get('commodity_type') or company.get('commodity') or '',
+            'priority_score': safe_score(company.get('priority_score', 0)),
+            'site_name': site_name,
+            'site_match_score': safe_score(company.get('best_site_match_score', 0)),
+            'lane_score': safe_score(company.get('best_lane_score', 0)),
+            'readiness_label': company.get('readiness_label', ''),
+            'readiness_tone': company.get('readiness_tone', ''),
+            'next_action': company.get('readiness_next_action') or readiness_next_action(company.get('readiness_label')),
+            'advance_action': pipeline_stage_advancement(company.get('readiness_label')),
+            'explanation': explanation,
+            'external_use': external_use,
+            **urls,
+            'primary_action': actions['primary'],
+            'secondary_actions': actions['secondary'],
+        }
+        stage['items'].append(item)
+
+    for stage in stages:
+        stage['items'].sort(
+            key=lambda item: (
+                item['priority_score'],
+                item['site_match_score'],
+                item['lane_score'],
+            ),
+            reverse=True,
+        )
+        stage['count'] = len(stage['items'])
+        stage['items'] = stage['items'][:limit_per_stage]
+
+    return {
+        'stages': stages,
+        'total': len(filtered_companies),
+        'unfiltered_total': len(annotated_companies),
+        'filters': filters,
+        'summary': {
+            'outreach_ready': stage_by_readiness.get(READY_LABEL, {}).get('count', 0),
+            'site_verification': stage_by_readiness.get(VERIFY_SITE_LABEL, {}).get('count', 0),
+            'site_selection': stage_by_readiness.get(COMPARE_SITES_LABEL, {}).get('count', 0),
+            'qualification': stage_by_readiness.get(QUALIFY_FIT_LABEL, {}).get('count', 0),
+            'monitor': stage_by_readiness.get('Monitor', {}).get('count', 0),
+        },
+    }
+
+
+def build_verification_queue(sites, companies, review_store_path=None, limit=30):
+    """Build the site data-confidence work queue."""
+    site_rows = merge_review_records(
+        build_site_directory(sites),
+        load_review_store(review_store_path) if review_store_path else {},
+    )
+    queue = []
+    for site in site_rows:
+        readiness = site.get('research_readiness') or build_research_readiness(site)
+        tasks = readiness.get('tasks', [])
+        if not tasks and not site.get('needs_confirmation') and site.get('review_status') == 'confirmed':
+            continue
+        blocked_count = safe_score(readiness.get('blocked_count', 0))
+        is_blocked = site.get('review_status') == 'blocked' or readiness.get('label') == 'Blocked By Data Gaps'
+        if site.get('review_status') == 'confirmed' and tasks:
+            queue_note = (
+                f"Review saved, but outreach is still blocked by "
+                f"{blocked_count} blocker{'s' if blocked_count != 1 else ''}."
+            )
+        elif is_blocked:
+            queue_note = 'Highest-friction record: clear blocking source or logistics gaps before outreach.'
+        else:
+            queue_note = 'Incomplete record: finish the remaining verification checklist before outreach.'
+        top_company = ''
+        top_company_score = 0
+        affected_company_count = 0
+        for company in companies:
+            score = calculate_site_compatibility_score(company, site)
+            if score >= 50:
+                affected_company_count += 1
+            if score > top_company_score:
+                top_company = company.get('company', '')
+                top_company_score = score
+        unlocks_outreach = bool(
+            not site.get('ready_for_outreach')
+            and top_company
+            and top_company_score >= 60
+            and (blocked_count or tasks or site.get('needs_confirmation') or is_blocked)
+        )
+        queue.append({
+            'site_name': site.get('site_name', ''),
+            'location': site.get('location') or format_site_location(site),
+            'state': site.get('state', ''),
+            'review_status': site.get('review_status', ''),
+            'review_status_label': site.get('review_status_label', status_label(site.get('review_status'))),
+            'review_status_tone': site.get('review_status_tone', review_status_tone(site.get('review_status'))),
+            'readiness': readiness,
+            'confidence': confidence_label(site),
+            'needs_confirmation': site.get('needs_confirmation'),
+            'flags': site.get('data_quality_flags', []),
+            'tasks': tasks[:5],
+            'top_blocker': tasks[0] if tasks else 'Review source confidence and site details.',
+            'blocked_count': blocked_count,
+            'task_count': len(tasks),
+            'is_blocked': is_blocked,
+            'queue_note': queue_note,
+            'top_company': top_company,
+            'top_company_score': top_company_score,
+            'affected_company_count': affected_company_count,
+            'unlocks_outreach': unlocks_outreach,
+            'unlock_note': (
+                'Fixing this site can unlock outreach for the best-fit company.'
+                if unlocks_outreach
+                else 'Fixing this site improves downstream matching, workspace, comparison, and export quality.'
+            ),
+            'site_url': url_for('site_detail', site_name=site.get('site_name', '')),
+            'company_url': url_for('company_detail', company_name=top_company) if top_company else '',
+            'workspace_url': url_for('opportunity_workspace', company=top_company, site=site.get('site_name', '')) if top_company else '',
+        })
+
+    queue.sort(
+        key=lambda item: (
+            0 if item['is_blocked'] else 1,
+            -item['blocked_count'],
+            item['readiness'].get('score', 0),
+            item['site_name'],
+        )
+    )
+    return {
+        'items': queue[:limit],
+        'total': len(queue),
+        'summary': {
+            'blocked': sum(1 for item in queue if item['readiness'].get('label') == 'Blocked By Data Gaps'),
+            'needs_confirmation': sum(1 for item in queue if item['needs_confirmation']),
+            'missing_sources': sum(
+                1 for item in queue
+                if any('source' in task.lower() for task in item['tasks'])
+            ),
+            'average_readiness': round(
+                sum(safe_score(item['readiness'].get('score', 0)) for item in queue) / len(queue),
+                1,
+            ) if queue else 0,
+        },
+    }
+
+
+def build_command_center_today_work(pipeline, verification, limit=7):
+    """Build a compact, prioritized daily triage list across core workflows."""
+    stage_lookup = {stage['readiness']: stage for stage in pipeline['stages']}
+    work = []
+    seen = set()
+    seen_action_urls = set()
+
+    def add_item(key, rank, title, subtitle, why, primary_action, tone='review', pills=None):
+        if not primary_action or not primary_action.get('url') or key in seen:
+            return
+        if primary_action['url'] in seen_action_urls:
+            return
+        seen.add(key)
+        seen_action_urls.add(primary_action['url'])
+        work.append({
+            'rank': rank,
+            'title': title,
+            'subtitle': subtitle,
+            'why': why,
+            'primary_action': primary_action,
+            'tone': tone,
+            'pills': [pill for pill in (pills or []) if pill],
+        })
+
+    for item in stage_lookup.get(VERIFY_SITE_LABEL, {}).get('items', [])[:4]:
+        add_item(
+            ('verify-opportunity', item['company'], item['site_name']),
+            10 - item['priority_score'] / 100,
+            item['site_name'] or item['company'],
+            f"{item['company']} is blocked before outreach.",
+            item['explanation']['blocker'],
+            item['primary_action'],
+            tone=item['readiness_tone'],
+            pills=[
+                f"{item['priority_score']}/100 priority",
+                item['readiness_label'],
+            ],
+        )
+
+    for item in stage_lookup.get(READY_LABEL, {}).get('items', [])[:3]:
+        external_use = item.get('external_use', {})
+        add_item(
+            ('ready', item['company'], item['site_name']),
+            20 - item['priority_score'] / 100,
+            item['company'],
+            f"{item['site_name']} is ready enough for workspace prep.",
+            external_use.get('note') or item['explanation']['blocker'],
+            item['primary_action'],
+            tone=item['readiness_tone'],
+            pills=[
+                f"{item['priority_score']}/100 priority",
+                item['readiness_label'],
+                external_use.get('status'),
+            ],
+        )
+
+    for item in verification['items'][:5]:
+        add_item(
+            ('site-verification', item['site_name']),
+            30 - item['blocked_count'],
+            item['site_name'],
+            item['unlock_note'],
+            item['top_blocker'],
+            {'label': 'Review Site', 'url': item['site_url']},
+            tone='warning' if item['is_blocked'] else 'review',
+            pills=[
+                item['review_status_label'],
+                f"{item['blocked_count']} blockers",
+            ],
+        )
+
+    for item in stage_lookup.get(COMPARE_SITES_LABEL, {}).get('items', [])[:2]:
+        add_item(
+            ('compare', item['company']),
+            40 - item['priority_score'] / 100,
+            item['company'],
+            'This prospect needs a first-choice site before outreach can be trusted.',
+            item['advance_action'],
+            item['primary_action'],
+            tone=item['readiness_tone'],
+            pills=[
+                f"{item['priority_score']}/100 priority",
+                item['readiness_label'],
+            ],
+        )
+
+    for item in stage_lookup.get(QUALIFY_FIT_LABEL, {}).get('items', [])[:2]:
+        add_item(
+            ('qualify', item['company'], item['site_name']),
+            50 - item['priority_score'] / 100,
+            item['company'],
+            'The fit is promising, but needs a human check before outreach.',
+            item['advance_action'],
+            item['primary_action'],
+            tone=item['readiness_tone'],
+            pills=[
+                f"{item['priority_score']}/100 priority",
+                item['readiness_label'],
+            ],
+        )
+
+    work.sort(key=lambda item: item['rank'])
+    return work[:limit]
+
+
+def build_saved_views():
+    """Return useful saved view shortcuts across core dashboard workflows."""
+    return [
+        {
+            'label': 'Today: site verification',
+            'description': 'Open the highest-impact source and data confirmation queue.',
+            'url': url_for('verification_queue'),
+        },
+        {
+            'label': 'High-score site blockers',
+            'description': 'Companies with enough priority to matter, blocked by site verification.',
+            'url': url_for('companies', readiness=VERIFY_SITE_LABEL, min_score=70),
+        },
+        {
+            'label': 'Texas chemical prospects',
+            'description': 'A practical market slice for chemical and bulk liquid targets.',
+            'url': url_for('companies', state='TX', segment='Chemicals', min_score=60),
+        },
+        {
+            'label': 'Transload-ready sites',
+            'description': 'Industrial sites with transload availability in the source data.',
+            'url': url_for('sites', transload_available='Yes'),
+        },
+        {
+            'label': 'Steel supply chain map',
+            'description': 'Geographic view focused on the steel supply-chain play.',
+            'url': url_for('opportunity_map', supply_chain='steel'),
+        },
+        {
+            'label': 'Opportunity pipeline',
+            'description': 'Review all companies by action stage.',
+            'url': url_for('opportunity_pipeline'),
+        },
+    ]
+
+
+def build_command_center(companies, sites, rail_infrastructure, review_store_path=None):
+    """Build the dashboard landing-page operating summary."""
+    pipeline = build_opportunity_pipeline(
+        companies,
+        sites,
+        review_store_path=review_store_path,
+        limit_per_stage=6,
+    )
+    verification = build_verification_queue(
+        sites,
+        companies,
+        review_store_path=review_store_path,
+        limit=8,
+    )
+    map_filters = {
+        'query': '',
+        'state': '',
+        'segment': '',
+        'commodity': '',
+        'min_score': 60,
+        'min_site_fit': None,
+        'site_readiness': '',
+        'source_confidence': '',
+        'supply_chain': '',
+        'node_types': ['company', 'site'],
+    }
+    map_data = build_opportunity_map(
+        companies,
+        sites,
+        rail_infrastructure,
+        map_filters,
+        review_store_path=review_store_path,
+    )
+    ready_stage = next(
+        (stage for stage in pipeline['stages'] if stage['readiness'] == READY_LABEL),
+        {'items': []},
+    )
+    verify_stage = next(
+        (stage for stage in pipeline['stages'] if stage['readiness'] == VERIFY_SITE_LABEL),
+        {'items': []},
+    )
+    return {
+        'pipeline': pipeline,
+        'verification': verification,
+        'today_work': build_command_center_today_work(pipeline, verification),
+        'saved_views': build_saved_views(),
+        'ready_opportunities': ready_stage['items'],
+        'site_blockers': verify_stage['items'],
+        'territory_plays': map_data.get('territory_plays', [])[:4],
+        'summary': {
+            'companies': len(companies),
+            'sites': len(sites),
+            'rail_records': len(rail_infrastructure),
+            'territory_count': len(map_data.get('territory_plays', [])),
+        },
+    }
+
+
+def render_command_center_packet(center):
+    """Render a plain-text business packet for sharing outside the dashboard."""
+    lines = [
+        'OmniMapping Opportunity Packet',
+        'Internal triage artifact: confirm source facts, contact owner, timing, and human review status before external use.',
+        f"Companies: {center['summary']['companies']}",
+        f"Sites: {center['summary']['sites']}",
+        '',
+        'Pipeline',
+    ]
+    for stage in center['pipeline']['stages']:
+        lines.append(f"- {stage['label']}: {stage['count']}")
+    lines.extend(['', 'Top Site Verification Items'])
+    for item in center['verification']['items'][:10]:
+        first_task = item['tasks'][0] if item['tasks'] else 'Review source confidence and site details.'
+        lines.append(
+            f"- {item['site_name']} ({item['location']}): "
+            f"{item['readiness'].get('label')} - {first_task}"
+        )
+    lines.extend(['', 'Outreach Prep Candidates'])
+    ready_items = center['ready_opportunities'][:10]
+    if ready_items:
+        for item in ready_items:
+            external_use = item.get('external_use', {})
+            lines.append(
+                f"- {item['company']} + {item['site_name']}: "
+                f"{external_use.get('status', 'Review before external use')} - "
+                f"{external_use.get('note', 'Confirm human review before sharing externally.')}"
+            )
+    else:
+        lines.append('- None currently queued.')
+    lines.extend(['', 'Territory Plays'])
+    for play in center['territory_plays']:
+        lines.append(f"- {play.get('title')}: {play.get('reason')}")
+    return "\n".join(lines) + "\n"
 
 
 def build_supply_chain_scan_summary(chains):
@@ -1336,6 +1997,39 @@ def build_workspace_data_gaps(company, site, compatibility_score=None):
     return gaps
 
 
+def build_workspace_qualification_checklist(company, site, lane, research_readiness):
+    """Translate qualification language into concrete user actions."""
+    return [
+        {
+            'label': 'Material volumes',
+            'action': (
+                'Confirm what moves inbound and outbound, estimated annual volume, '
+                'handling mode, and whether rail or transload is actually needed.'
+            ),
+        },
+        {
+            'label': 'Lane fit',
+            'action': (
+                'Check origin and destination lanes against this site rail access, '
+                'truck access, port optionality, and the serving railroad.'
+            ),
+        },
+        {
+            'label': 'Site requirements',
+            'action': (
+                'Confirm acreage, parcel control, utilities, zoning, transload capacity, '
+                'and timing before outreach.'
+            ),
+        },
+        {
+            'label': 'Evidence to capture',
+            'action': (
+                (research_readiness.get('tasks') or ['No open blockers. Capture source links, owner contact, utilities, zoning, and timing notes.'])[0]
+            ),
+        },
+    ]
+
+
 def build_workspace_talking_points(company, site, segment_data):
     """Build concise outreach talking points from existing company/site context."""
     talking_points = []
@@ -1356,6 +2050,49 @@ def build_workspace_talking_points(company, site, segment_data):
             seen.add(point)
 
     return unique_points or ['Lead with rail-served site fit, logistics efficiency, and speed to evaluate development readiness.']
+
+
+def build_workspace_external_use_guardrail(company, opportunity_readiness, verification_tasks):
+    """Explain whether a selected opportunity is usable outside the dashboard."""
+    company_text = " ".join([
+        str(company.get('company_info', '')),
+        str(company.get('why_target', '')),
+        str(company.get('opportunity_risk', '')),
+    ]).lower()
+    has_speculative_context = 'speculative' in company_text
+    blockers = list(verification_tasks or [])
+    actionable = bool(opportunity_readiness.get('actionable'))
+
+    if blockers:
+        status = 'Hold for verification'
+        tone = 'review'
+        note = 'Resolve the open research blocker before using this brief for outreach.'
+    elif has_speculative_context:
+        status = 'Internal review first'
+        tone = 'review'
+        note = 'The company opportunity language is speculative, so confirm live need, decision maker, and timing before external outreach.'
+    elif actionable:
+        status = 'Ready for outreach prep'
+        tone = 'positive'
+        note = 'No research blockers remain. Confirm timing and contact owner before sending externally.'
+    else:
+        status = 'Hold for qualification'
+        tone = 'review'
+        note = 'The pair still needs qualification before outreach prep.'
+
+    return {
+        'status': status,
+        'tone': tone,
+        'note': note,
+        'has_speculative_context': has_speculative_context,
+        'human_review_required': bool(blockers or has_speculative_context or not actionable),
+        'outreach_usable': bool(actionable and not blockers and not has_speculative_context),
+        'send_checklist': [
+            'Confirm public-source facts and remove unsupported claims.',
+            'Confirm contact target, outreach timing, and why this message matters now.',
+            'Keep speculative prospect language internal unless a human reviewer validates it.',
+        ],
+    }
 
 
 def build_company_site_comparison(company, sites, segments, limit=5):
@@ -1414,6 +2151,10 @@ def build_company_site_comparison(company, sites, segments, limit=5):
             'research_readiness_label': first_choice['research_readiness']['label'],
             'readiness_label': first_choice['opportunity_readiness']['label'],
             'actionable': first_choice['actionable'],
+            'next_action': first_choice['opportunity_readiness'].get('next_action', ''),
+            'reason': first_choice['opportunity_readiness'].get('reason', ''),
+            'blocked_count': first_choice['research_readiness'].get('blocked_count', 0),
+            'verification_tasks': first_choice.get('verification_tasks', [])[:3],
             'why': first_choice['matching_reasons'][:3],
         }
 
@@ -1462,6 +2203,18 @@ def build_opportunity_workspace(company, site, segments):
     company_copy['best_site_name'] = site.get('site_name', '')
     company_copy['best_recommended_site_location'] = format_site_location(site)
     company_copy['best_site_match_score'] = compatibility_score
+    verification_tasks = research_readiness.get('tasks', [])
+    qualification_checklist = build_workspace_qualification_checklist(
+        company,
+        site,
+        lane,
+        research_readiness,
+    )
+    external_use = build_workspace_external_use_guardrail(
+        company,
+        opportunity_readiness,
+        verification_tasks,
+    )
 
     return {
         'export_info': {
@@ -1489,11 +2242,163 @@ def build_opportunity_workspace(company, site, segments):
         'lane': lane,
         'research_readiness': research_readiness,
         'opportunity_readiness': opportunity_readiness,
-        'verification_tasks': research_readiness.get('tasks', []),
+        'external_use': external_use,
+        'verification_tasks': verification_tasks,
+        'qualification_checklist': qualification_checklist,
         'company_context': format_company_context(company, segment_data),
         'risks_or_data_gaps': build_workspace_data_gaps(company, site, compatibility_score=compatibility_score),
         'talking_points': build_workspace_talking_points(company, site, segment_data),
     }
+
+
+def build_workspace_brief_handoff(workspace, export_filename):
+    """Build the user-facing handoff model for a workspace brief page."""
+    company = workspace.get('company', {})
+    site = workspace.get('site', {})
+    priority = workspace.get('priority', {})
+    site_match = workspace.get('site_match', {})
+    lane = workspace.get('lane', {})
+    research = workspace.get('research_readiness', {})
+    readiness = workspace.get('opportunity_readiness', {})
+    external_use = workspace.get('external_use') or build_workspace_external_use_guardrail(
+        company,
+        readiness,
+        workspace.get('verification_tasks', []),
+    )
+    talking_points = workspace.get('talking_points', [])
+    blockers = workspace.get('verification_tasks', [])
+
+    lead_angle = talking_points[0] if talking_points else readiness.get('reason', '')
+    executive_summary = (
+        f"{company.get('company')} is a {safe_score(priority.get('score', 0))}/100 "
+        f"{company.get('segment', 'prospect')} opportunity matched to "
+        f"{site.get('site_name')} at {safe_score(site_match.get('compatibility_score', 0))}/100 site fit. "
+        f"{lead_angle}"
+    ).strip()
+
+    return {
+        'file_name': export_filename,
+        'external_status': external_use.get('status', 'Hold for qualification'),
+        'external_tone': external_use.get('tone', 'review'),
+        'external_note': external_use.get('note', ''),
+        'has_speculative_context': external_use.get('has_speculative_context', False),
+        'human_review_required': external_use.get('human_review_required', True),
+        'outreach_usable': external_use.get('outreach_usable', False),
+        'executive_summary': executive_summary,
+        'decision_gates': [
+            {
+                'label': 'Company priority',
+                'value': f"{safe_score(priority.get('score', 0))}/100",
+                'status': priority_label(priority.get('score', 0)),
+                'tone': score_tone(priority.get('score', 0)),
+            },
+            {
+                'label': 'Site fit',
+                'value': f"{safe_score(site_match.get('compatibility_score', 0))}/100",
+                'status': match_label(site_match.get('compatibility_score', 0)),
+                'tone': score_tone(site_match.get('compatibility_score', 0)),
+            },
+            {
+                'label': 'Lane readiness',
+                'value': f"{safe_score(lane.get('lane_score', 0))}/100",
+                'status': lane.get('lane_readiness_label', 'Needs review'),
+                'tone': score_tone(lane.get('lane_score', 0)),
+            },
+            {
+                'label': 'Research readiness',
+                'value': f"{safe_score(research.get('score', 0))}/100",
+                'status': research.get('label', 'Needs review'),
+                'tone': research.get('tone', 'review'),
+            },
+            {
+                'label': 'External use',
+                'value': external_use.get('status', 'Hold for qualification'),
+                'status': 'Human review required' if external_use.get('human_review_required', True) else 'Prep-ready',
+                'tone': external_use.get('tone', 'review'),
+            },
+        ],
+        'evidence': [
+            {'label': 'Source confidence', 'value': site.get('source_confidence') or 'Unspecified'},
+            {'label': 'Last verified', 'value': site.get('last_verified') or 'Unknown'},
+            {'label': 'Acreage', 'value': site.get('acres') or 'Confirm'},
+            {'label': 'Rail served', 'value': site.get('rail_served') or 'Confirm'},
+            {'label': 'Transload', 'value': site.get('transload_available') or 'Confirm'},
+            {'label': 'Port access', 'value': site.get('port_access') or 'Confirm'},
+        ],
+        'questions': [
+            'Is there a current expansion, relocation, sourcing, or logistics event behind this prospect?',
+            'What annual inbound and outbound volumes are realistic, and which lanes matter most?',
+            'Does the company need direct rail, transload, port optionality, or mainly industrial real estate?',
+            'Who owns the decision, and what proof would make this site credible to them?',
+        ],
+        'send_checklist': external_use.get('send_checklist', []),
+    }
+
+
+def render_workspace_brief_text(company, site, segments):
+    """Build the selected opportunity TXT brief body."""
+    segment_data = find_segment_for_company(segments, company)
+    compatibility_score = safe_score(calculate_site_compatibility_score(company, site))
+    workspace = build_opportunity_workspace(company, site, segments)
+    company_copy = company.copy()
+    company_copy['best_recommended_site'] = site.get('site_name', '')
+    company_copy['best_site_name'] = site.get('site_name', '')
+    company_copy['best_recommended_site_location'] = format_site_location(site)
+    company_copy['best_site_match_score'] = compatibility_score
+    company_copy['recommended_next_action'] = workspace['opportunity_readiness'].get(
+        'next_action',
+        generate_recommended_next_action(company, site.get('site_name')),
+    )
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        print_opportunity_brief(company_copy, segment_data, recommended_site=site)
+        print("\n9. REVIEWED READINESS CONTEXT:")
+        print(
+            "   - Opportunity readiness: "
+            f"{workspace['opportunity_readiness'].get('label', 'Needs review')}"
+        )
+        print(
+            "   - Research readiness: "
+            f"{workspace['research_readiness'].get('label', 'Needs review')} "
+            f"({workspace['research_readiness'].get('score', 0)}/100)"
+        )
+        print(
+            "   - Outreach usable: "
+            f"{'Yes' if workspace['external_use'].get('outreach_usable') else 'No'}"
+        )
+        print(
+            "   - External use status: "
+            f"{workspace['external_use'].get('status', 'Hold for qualification')}"
+        )
+        print(
+            "   - Human review required: "
+            f"{'Yes' if workspace['external_use'].get('human_review_required') else 'No'}"
+        )
+        print(
+            "   - External use note: "
+            f"{workspace['external_use'].get('note', 'Review before external use.')}"
+        )
+        print(
+            "   - Next action: "
+            f"{workspace['opportunity_readiness'].get('next_action', 'Review this pair before outreach.')}"
+        )
+        print(
+            "   - Why this action: "
+            f"{workspace['opportunity_readiness'].get('reason', 'No readiness explanation available.')}"
+        )
+        if workspace['verification_tasks']:
+            print("   - Blockers:")
+            for task in workspace['verification_tasks']:
+                print(f"     * {task}")
+            print("   - Verification tasks:")
+            for task in workspace['verification_tasks']:
+                print(f"     * {task}")
+        else:
+            print("   - Blockers: none open in the current checklist.")
+            print("   - Verification tasks: none open in the current checklist.")
+
+    return buffer.getvalue()
 
 
 def write_company_site_comparison_json(comparison, output_dir="exports"):
@@ -1529,8 +2434,13 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
         'target_industries',
         'lane_score',
         'lane_readiness_label',
+        'opportunity_readiness_label',
         'research_readiness_label',
         'research_readiness_score',
+        'review_status',
+        'source_confidence',
+        'last_verified',
+        'blocked_count',
         'lane_reasons',
         'verification_tasks',
         'matching_reasons',
@@ -1555,8 +2465,13 @@ def write_company_site_comparison_csv(comparison, output_dir="exports"):
                 'target_industries': site.get('target_industries', ''),
                 'lane_score': compared_site.get('lane_score', ''),
                 'lane_readiness_label': compared_site.get('lane_readiness_label', ''),
+                'opportunity_readiness_label': compared_site.get('opportunity_readiness', {}).get('label', ''),
                 'research_readiness_label': compared_site.get('research_readiness', {}).get('label', ''),
                 'research_readiness_score': compared_site.get('research_readiness', {}).get('score', ''),
+                'review_status': site.get('review_status_label') or site.get('review_status', ''),
+                'source_confidence': site.get('source_confidence', ''),
+                'last_verified': site.get('last_verified', ''),
+                'blocked_count': compared_site.get('research_readiness', {}).get('blocked_count', ''),
                 'lane_reasons': '; '.join(compared_site.get('lane_reasons', [])),
                 'verification_tasks': '; '.join(compared_site.get('verification_tasks', [])),
                 'matching_reasons': '; '.join(compared_site.get('matching_reasons', [])),
@@ -1581,14 +2496,6 @@ def write_workspace_json(workspace, output_dir="exports"):
 def write_workspace_brief_txt(company, site, segments, output_dir="exports"):
     """Write a selected opportunity brief TXT export using the existing brief printer."""
     os.makedirs(output_dir, exist_ok=True)
-    segment_data = find_segment_for_company(segments, company)
-    compatibility_score = safe_score(calculate_site_compatibility_score(company, site))
-    company_copy = company.copy()
-    company_copy['best_recommended_site'] = site.get('site_name', '')
-    company_copy['best_site_name'] = site.get('site_name', '')
-    company_copy['best_recommended_site_location'] = format_site_location(site)
-    company_copy['best_site_match_score'] = compatibility_score
-    company_copy['recommended_next_action'] = generate_recommended_next_action(company, site.get('site_name'))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     company_token = safe_filename_token(company.get('company'), default='company')
@@ -1596,18 +2503,87 @@ def write_workspace_brief_txt(company, site, segments, output_dir="exports"):
     filename = f"opportunity_brief_{company_token}_{site_token}_{timestamp}.txt"
     filepath = os.path.join(output_dir, filename)
 
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        print_opportunity_brief(company_copy, segment_data, recommended_site=site)
-
     with open(filepath, 'w') as brief_file:
-        brief_file.write(buffer.getvalue())
+        brief_file.write(render_workspace_brief_text(company, site, segments))
     return filepath
+
+
+def build_site_review_next_steps(site, companies):
+    """Build visible next-step guidance after a site review save."""
+    readiness = site.get('research_readiness') or build_research_readiness(site)
+    site_name = site.get('site_name', '')
+    matches = []
+    for company in companies:
+        compatibility_score = safe_score(calculate_site_compatibility_score(company, site))
+        if compatibility_score <= 0:
+            continue
+        opportunity_readiness = build_opportunity_readiness(
+            company,
+            site=site,
+            compatibility_score=compatibility_score,
+            research_readiness=build_research_readiness(
+                site,
+                company=company,
+                compatibility_score=compatibility_score,
+            ),
+        )
+        matches.append({
+            'company': company.get('company', ''),
+            'compatibility_score': compatibility_score,
+            'opportunity_readiness': opportunity_readiness,
+            'workspace_url': url_for('opportunity_workspace', company=company.get('company', ''), site=site_name),
+            'compare_url': url_for('company_site_comparison', company_name=company.get('company', '')),
+        })
+    matches.sort(key=lambda item: item['compatibility_score'], reverse=True)
+    top_match = matches[0] if matches else None
+
+    if readiness.get('label') == 'Research Ready':
+        headline = 'Research Ready: this site now flows downstream.'
+        description = (
+            f"{site_name} drops out of Site Verification and becomes usable in Pipeline, "
+            "Workspace, comparisons, and exports."
+        )
+        primary = (
+            {'label': 'Open Workspace', 'url': top_match['workspace_url']}
+            if top_match else {'label': 'Open Pipeline', 'url': url_for('opportunity_pipeline')}
+        )
+        secondary = [
+            {'label': 'Check Pipeline', 'url': url_for('opportunity_pipeline')},
+        ]
+        if top_match:
+            secondary.append({'label': 'Compare Sites', 'url': top_match['compare_url']})
+    elif readiness.get('tasks'):
+        headline = 'Review saved, but this site still needs verification.'
+        description = (
+            f"{readiness.get('blocked_count', 0)} blocker"
+            f"{'s' if readiness.get('blocked_count', 0) != 1 else ''} remain before outreach."
+        )
+        primary = {'label': 'Continue Site Verification', 'url': url_for('verification_queue')}
+        secondary = [{'label': 'Check Pipeline', 'url': url_for('opportunity_pipeline')}]
+        if top_match:
+            secondary.append({'label': 'Open Workspace', 'url': top_match['workspace_url']})
+    else:
+        headline = 'Review saved.'
+        description = 'Use Pipeline to choose the next active opportunity.'
+        primary = {'label': 'Check Pipeline', 'url': url_for('opportunity_pipeline')}
+        secondary = [{'label': 'Site Verification', 'url': url_for('verification_queue')}]
+
+    return {
+        'headline': headline,
+        'description': description,
+        'readiness_label': readiness.get('label', 'Needs Verification'),
+        'blocked_count': safe_score(readiness.get('blocked_count', 0)),
+        'tasks': readiness.get('tasks', [])[:4],
+        'primary_action': primary,
+        'secondary_actions': secondary,
+        'unlocked_opportunities': matches[:3] if readiness.get('label') == 'Research Ready' else [],
+    }
 
 
 def create_app(data_loader=load_data, export_dir="exports", review_store_path=None):
     """Create the dashboard app with injectable data loading for tests."""
     app = Flask(__name__)
+    app.secret_key = os.environ.get('OMNIMAPPING_SECRET_KEY', 'omnimapping-local-dashboard')
     app.config['OMNIMAPPING_DATA_LOADER'] = data_loader
     app.config['OMNIMAPPING_EXPORT_DIR'] = export_dir
     app.config['OMNIMAPPING_REVIEW_STORE'] = review_store_path or os.path.join('data', 'review_status.json')
@@ -1617,6 +2593,13 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             app.config['OMNIMAPPING_DATA'] = app.config['OMNIMAPPING_DATA_LOADER']()
         segments, companies, sites, rail_infrastructure = app.config['OMNIMAPPING_DATA']
         return segments, companies, sites, rail_infrastructure
+
+    def get_reviewed_sites(sites):
+        """Apply local review overlays consistently for pages and downloads."""
+        return merge_review_records(
+            sites,
+            load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']),
+        )
 
     @app.context_processor
     def inject_helpers():
@@ -1639,7 +2622,44 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
 
     @app.route('/')
     def index():
-        return redirect(url_for('opportunity_map'))
+        _, companies, sites, rail_infrastructure = get_data()
+        center = build_command_center(
+            companies,
+            sites,
+            rail_infrastructure,
+            review_store_path=app.config['OMNIMAPPING_REVIEW_STORE'],
+        )
+        return render_template('command_center.html', center=center)
+
+    @app.route('/pipeline')
+    def opportunity_pipeline():
+        _, companies, sites, _ = get_data()
+        filters = get_company_filter_args(request.args)
+        pipeline = build_opportunity_pipeline(
+            companies,
+            sites,
+            review_store_path=app.config['OMNIMAPPING_REVIEW_STORE'],
+            limit_per_stage=25,
+            filters=filters,
+        )
+        return render_template(
+            'opportunity_pipeline.html',
+            pipeline=pipeline,
+            saved_views=build_saved_views(),
+            filter_options=build_filter_options(companies),
+            filters=filters,
+        )
+
+    @app.route('/verification')
+    def verification_queue():
+        _, companies, sites, _ = get_data()
+        queue = build_verification_queue(
+            sites,
+            companies,
+            review_store_path=app.config['OMNIMAPPING_REVIEW_STORE'],
+            limit=60,
+        )
+        return render_template('verification_queue.html', queue=queue, saved_views=build_saved_views())
 
     @app.route('/companies')
     def companies():
@@ -1661,6 +2681,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             filtered_count=len(ranked_companies),
             filters=filters,
             filter_options=build_filter_options(all_companies),
+            view_presets=build_company_view_presets(),
             limit=limit,
             sites=sites,
             scan_summary=build_company_scan_summary(ranked_companies),
@@ -1673,7 +2694,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
         if not company:
             abort(404)
 
-        report = build_company_report(company, sites, company_name, all_matches=matches)
+        report = build_company_report(company, get_reviewed_sites(sites), company_name, all_matches=matches)
         return render_template('company_detail.html', report=report)
 
     @app.route('/companies/<path:company_name>/site-comparison')
@@ -1684,11 +2705,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             abort(404)
 
         limit = parse_limit(request.args.get('limit'), default=5, maximum=10)
-        site_rows = merge_review_records(
-            sites,
-            load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']),
-        )
-        comparison = build_company_site_comparison(company, site_rows, segments, limit=limit)
+        comparison = build_company_site_comparison(company, get_reviewed_sites(sites), segments, limit=limit)
         return render_template('company_site_comparison.html', comparison=comparison, limit=limit)
 
     @app.route('/map')
@@ -1716,12 +2733,30 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             ),
         )
 
+    @app.route('/downloads/opportunity-packet.txt')
+    def download_opportunity_packet():
+        _, companies, sites, rail_infrastructure = get_data()
+        center = build_command_center(
+            companies,
+            sites,
+            rail_infrastructure,
+            review_store_path=app.config['OMNIMAPPING_REVIEW_STORE'],
+        )
+        packet = render_command_center_packet(center)
+        buffer = io.BytesIO(packet.encode('utf-8'))
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name='omnimapping_opportunity_packet.txt',
+            mimetype='text/plain',
+        )
+
     @app.route('/sites')
     def sites():
         _, companies, all_sites, _ = get_data()
         filters = get_site_filter_args(request.args)
-        site_rows = build_site_directory(all_sites)
-        site_rows = merge_review_records(site_rows, load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']))
+        reviewed_sites = get_reviewed_sites(all_sites)
+        site_rows = build_site_directory(reviewed_sites)
         site_rows = filter_site_directory(site_rows, filters)
 
         return render_template(
@@ -1729,7 +2764,8 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             sites=site_rows,
             total_count=len(all_sites),
             filtered_count=len(site_rows),
-            filter_options=build_site_filter_options(all_sites),
+            filter_options=build_site_filter_options(reviewed_sites),
+            view_presets=build_site_view_presets(),
             filters=filters,
             company_count=len(companies),
             scan_summary=build_site_scan_summary(site_rows),
@@ -1738,15 +2774,14 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
     @app.route('/sites/<path:site_name>')
     def site_detail(site_name):
         _, companies, all_sites, _ = get_data()
-        site, matches = find_site_for_report(all_sites, site_name)
+        reviewed_sites = get_reviewed_sites(all_sites)
+        site, matches = find_site_for_report(reviewed_sites, site_name)
         if not site:
             abort(404)
 
         report = build_site_report(site, companies, site_name, all_matches=matches, top_limit=15)
-        report['site_profile'] = merge_review_record(
-            report['site_profile'],
-            load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']),
-        )
+        if request.args.get('review_saved'):
+            report['review_outcome'] = build_site_review_next_steps(site, companies)
         return render_template('site_detail.html', report=report)
 
     @app.route('/supply-chains')
@@ -1816,12 +2851,43 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
                 notes=request.form.get('review_notes', ''),
                 reviewed_by=request.form.get('reviewed_by', ''),
                 source_update_url=request.form.get('source_update_url', ''),
+                source_confidence=request.form.get('source_confidence', ''),
+                last_verified=request.form.get('last_verified', ''),
+                data_gap_notes=request.form.get('data_gap_notes', ''),
+                owner_contact=request.form.get('owner_contact', ''),
+                utilities=request.form.get('utilities', ''),
+                zoning_entitlement=request.form.get('zoning_entitlement', ''),
+                acres=request.form.get('acres', ''),
+                rail_served=request.form.get('rail_served', ''),
+                nearby_class1=request.form.get('nearby_class1', ''),
+                transload_available=request.form.get('transload_available', ''),
+                interstate_access=request.form.get('interstate_access', ''),
+                port_access=request.form.get('port_access', ''),
             )
             save_review_store(app.config['OMNIMAPPING_REVIEW_STORE'], review_store)
         except ValueError:
             abort(400)
 
-        return redirect(url_for('site_detail', site_name=site.get('site_name', '')))
+        updated_site = merge_review_record(
+            site,
+            load_review_store(app.config['OMNIMAPPING_REVIEW_STORE']),
+        )
+        readiness = updated_site.get('research_readiness', {})
+        blocked_count = safe_score(readiness.get('blocked_count', 0))
+        outreach_label = 'usable for outreach' if updated_site.get('ready_for_outreach') else 'not usable for outreach yet'
+        flash(
+            "Review saved for {site}. Status: {status}. Research readiness: {research}. "
+            "Remaining blocker count: {blocked}. Site is {outreach}.".format(
+                site=updated_site.get('site_name', ''),
+                status=updated_site.get('review_status_label', ''),
+                research=readiness.get('label', 'Needs Verification'),
+                blocked=blocked_count,
+                outreach=outreach_label,
+            ),
+            'success',
+        )
+
+        return redirect(url_for('site_detail', site_name=site.get('site_name', ''), review_saved=1))
 
     @app.route('/workspace')
     def opportunity_workspace():
@@ -1837,12 +2903,43 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
         workspace = build_opportunity_workspace(company, site, segments)
         return render_template('opportunity_workspace.html', workspace=workspace)
 
+    @app.route('/workspace/brief')
+    def workspace_brief_preview():
+        segments, companies, sites, _ = get_data()
+        company, _ = find_company_for_report(companies, request.args.get('company', ''))
+        site, _ = find_site_for_report(get_reviewed_sites(sites), request.args.get('site', ''))
+        if not company or not site:
+            abort(404)
+
+        workspace = build_opportunity_workspace(company, site, segments)
+        filepath = write_workspace_brief_txt(
+            company,
+            site,
+            segments,
+            output_dir=app.config['OMNIMAPPING_EXPORT_DIR'],
+        )
+        with open(filepath) as brief_file:
+            brief_text = brief_file.read()
+        return render_template(
+            'workspace_brief.html',
+            workspace=workspace,
+            handoff=build_workspace_brief_handoff(workspace, os.path.basename(filepath)),
+            brief_text=brief_text,
+            export_filename=os.path.basename(filepath),
+            export_path=os.path.abspath(filepath),
+        )
+
     @app.route('/downloads/top-companies.csv')
     def download_top_companies_csv():
-        _, all_companies, _, _ = get_data()
+        _, all_companies, sites, _ = get_data()
         filters = get_company_filter_args(request.args)
         limit = parse_limit(request.args.get('limit'), default=50)
-        ranked_companies = filter_companies_for_dashboard(all_companies, filters)[:limit]
+        readiness_companies = annotate_companies_with_readiness(
+            all_companies,
+            sites,
+            review_store_path=app.config['OMNIMAPPING_REVIEW_STORE'],
+        )
+        ranked_companies = filter_companies_for_dashboard(readiness_companies, filters)[:limit]
         filename = "dashboard_top_companies.csv"
         filepath = export_to_csv(ranked_companies, filename=filename, output_dir=app.config['OMNIMAPPING_EXPORT_DIR'])
         if not filepath:
@@ -1854,13 +2951,28 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
         _, all_companies, sites, _ = get_data()
         filters = get_company_filter_args(request.args)
         limit = parse_limit(request.args.get('limit'), default=50)
-        ranked_companies = filter_companies_for_dashboard(all_companies, filters)
-        export_filters = {key: value for key, value in filters.items() if key != 'query'}
+        readiness_companies = annotate_companies_with_readiness(
+            all_companies,
+            sites,
+            review_store_path=app.config['OMNIMAPPING_REVIEW_STORE'],
+        )
+        ranked_companies = filter_companies_for_dashboard(readiness_companies, filters)
+        export_filters = {
+            key: value
+            for key, value in filters.items()
+            if key not in {'query', 'readiness'}
+        }
         filepath = export_top_companies_json(
             ranked_companies,
-            sites,
+            get_reviewed_sites(sites),
             output_dir=app.config['OMNIMAPPING_EXPORT_DIR'],
             limit=limit,
+            export_context=build_dashboard_export_context(
+                filters,
+                total_count=len(all_companies),
+                filtered_count=len(ranked_companies),
+                exported_count=len(ranked_companies[:limit]),
+            ),
             **export_filters,
         )
         return send_file(os.path.abspath(filepath), as_attachment=True, download_name=os.path.basename(filepath))
@@ -1872,7 +2984,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             filepath = export_company_report_json(
                 company_name,
                 all_companies,
-                sites,
+                get_reviewed_sites(sites),
                 output_dir=app.config['OMNIMAPPING_EXPORT_DIR'],
             )
         except ValueError:
@@ -1885,7 +2997,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
         try:
             filepath = export_site_report_json(
                 site_name,
-                all_sites,
+                get_reviewed_sites(all_sites),
                 companies,
                 output_dir=app.config['OMNIMAPPING_EXPORT_DIR'],
             )
@@ -1897,7 +3009,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
     def download_workspace_json():
         segments, companies, sites, _ = get_data()
         company, _ = find_company_for_report(companies, request.args.get('company', ''))
-        site, _ = find_site_for_report(sites, request.args.get('site', ''))
+        site, _ = find_site_for_report(get_reviewed_sites(sites), request.args.get('site', ''))
         if not company or not site:
             abort(404)
 
@@ -1913,7 +3025,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             abort(404)
 
         limit = parse_limit(request.args.get('limit'), default=5, maximum=10)
-        comparison = build_company_site_comparison(company, sites, segments, limit=limit)
+        comparison = build_company_site_comparison(company, get_reviewed_sites(sites), segments, limit=limit)
         filepath = write_company_site_comparison_json(
             comparison,
             output_dir=app.config['OMNIMAPPING_EXPORT_DIR'],
@@ -1928,7 +3040,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
             abort(404)
 
         limit = parse_limit(request.args.get('limit'), default=5, maximum=10)
-        comparison = build_company_site_comparison(company, sites, segments, limit=limit)
+        comparison = build_company_site_comparison(company, get_reviewed_sites(sites), segments, limit=limit)
         filepath = write_company_site_comparison_csv(
             comparison,
             output_dir=app.config['OMNIMAPPING_EXPORT_DIR'],
@@ -1939,7 +3051,7 @@ def create_app(data_loader=load_data, export_dir="exports", review_store_path=No
     def download_workspace_txt():
         segments, companies, sites, _ = get_data()
         company, _ = find_company_for_report(companies, request.args.get('company', ''))
-        site, _ = find_site_for_report(sites, request.args.get('site', ''))
+        site, _ = find_site_for_report(get_reviewed_sites(sites), request.args.get('site', ''))
         if not company or not site:
             abort(404)
 
@@ -1973,6 +3085,9 @@ def run_smoke_test():
 
     checks = [
         ('/health', 200),
+        ('/', 200),
+        ('/pipeline', 200),
+        ('/verification', 200),
         ('/companies', 200),
         ('/companies?state=TX&min_score=1', 200),
         ('/map', 200),

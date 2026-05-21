@@ -269,6 +269,11 @@
       background: var(--panel-soft);
     }
     .review-form .button { justify-self: start; }
+    .review-field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
     .scan-strip {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -292,6 +297,79 @@
       line-height: 1.1;
       margin-top: 2px;
     }
+    .view-presets {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .preset-link {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-height: 84px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: var(--shadow);
+    }
+    .preset-link:hover {
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+    .preset-link strong {
+      color: var(--accent-strong);
+      font-size: 14px;
+    }
+    .preset-link span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .command-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .stage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .stage-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .stage-card h3 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .work-item {
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      margin-top: 10px;
+    }
+    .work-item:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .work-item p {
+      margin: 6px 0;
+    }
+    .saved-view-list {
+      display: grid;
+      gap: 8px;
+    }
+    .saved-view-list .preset-link {
+      min-height: 0;
+    }
     .gap-note {
       border-left: 4px solid var(--amber);
       background: var(--amber-bg);
@@ -303,6 +381,79 @@
       border-left-color: var(--border-strong);
       background: var(--panel-soft);
       color: var(--muted-strong);
+    }
+    .export-preview {
+      background: #101820;
+      border-radius: 8px;
+      color: #f8fafc;
+      font-size: 0.85rem;
+      line-height: 1.55;
+      margin: 0;
+      max-height: 620px;
+      overflow: auto;
+      padding: 1rem;
+      white-space: pre-wrap;
+    }
+    .brief-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .brief-purpose {
+      border-left: 4px solid var(--accent);
+    }
+    .brief-decision {
+      display: grid;
+      gap: 8px;
+    }
+    .brief-decision strong {
+      font-size: 22px;
+      line-height: 1.25;
+    }
+    .brief-decision p {
+      margin: 0;
+      color: var(--muted-strong);
+    }
+    .brief-highlight-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .brief-gate-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+    .brief-summary {
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.55;
+      margin: 0;
+    }
+    .breakdown.single-column {
+      grid-template-columns: 1fr;
+    }
+    .flash-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .flash {
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      background: var(--blue-bg);
+      padding: 10px 12px;
+      color: var(--muted-strong);
+      font-weight: 700;
+      box-shadow: var(--shadow);
+    }
+    .flash.success {
+      border-left-color: var(--green);
+      background: var(--green-bg);
+      color: var(--green);
     }
     .action-cell {
       min-width: 142px;
@@ -1093,6 +1244,33 @@
     .map-node-drawer .empty {
       margin: 0 16px 16px;
     }
+    .collapsible-section {
+      padding: 0;
+      overflow: hidden;
+    }
+    .collapsible-section summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .collapsible-section summary::-webkit-details-marker { display: none; }
+    .collapsible-section summary::after {
+      content: "Show all";
+      flex: 0 0 auto;
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .collapsible-section[open] summary::after { content: "Hide"; }
+    .collapsible-section h2 { margin-bottom: 4px; }
+    .collapsible-section .collapsible-body {
+      padding: 0 16px 16px;
+    }
     .checkbox-row {
       display: flex;
       gap: 10px;
@@ -1137,7 +1315,7 @@
       .page-head, .topbar { flex-direction: column; align-items: stretch; }
       .section-head { flex-direction: column; }
       .actions { justify-content: flex-start; }
-      form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid, .chain-grid, .map-layout, .map-result-summary { grid-template-columns: 1fr; }
+      form.grid, .layout, .metrics, .breakdown, .scan-strip, .review-grid, .chain-grid, .map-layout, .map-result-summary, .command-grid, .brief-layout, .brief-highlight-grid, .brief-gate-grid { grid-template-columns: 1fr; }
       .active-filter-list { justify-content: flex-start; }
       .map-filters form, .map-filter-grid { grid-template-columns: 1fr; }
       .map-layer-block {
@@ -1146,6 +1324,7 @@
         padding-left: 0;
         padding-top: 14px;
       }
+      .review-field-grid { grid-template-columns: 1fr; }
       form.grid { gap: 12px; }
       .map-shell { min-height: 460px; }
       .chain-flow { grid-template-columns: 1fr; overflow: visible; }
@@ -1196,15 +1375,26 @@
     <div class="topbar">
       <div class="brand">OmniMapping Dashboard</div>
       <nav>
+        <a href="{{ url_for('index') }}">Command Center</a>
+        <a href="{{ url_for('opportunity_pipeline') }}">Pipeline</a>
+        <a href="{{ url_for('verification_queue') }}">Site Verification</a>
         <a href="{{ url_for('companies') }}">Ranked Companies</a>
         <a href="{{ url_for('opportunity_map') }}">Map</a>
         <a href="{{ url_for('sites') }}">Industrial Sites</a>
         <a href="{{ url_for('supply_chains') }}">Supply Chains</a>
-        <a href="{{ url_for('health') }}">Health</a>
       </nav>
     </div>
   </header>
   <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-list" role="status" aria-live="polite">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
     {% block content %}{% endblock %}
   </main>
 </body>

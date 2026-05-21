@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Opportunity Pipeline - OmniMapping{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="page-kicker">Workflow</div>
+    <h1>Opportunity Pipeline</h1>
+    <p class="summary-note">{{ pipeline.total }} of {{ pipeline.unfiltered_total }} companies grouped by the next action OmniMapping recommends.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('index') }}">Command Center</a>
+    <a class="button" href="{{ url_for('companies') }}">Ranked Companies</a>
+    <a class="button" href="{{ url_for('download_opportunity_packet') }}">Export Packet</a>
+  </div>
+</div>
+
+<section class="filters">
+  <form class="grid" method="get" action="{{ url_for('opportunity_pipeline') }}">
+    <div>
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" placeholder="Company, city, site, lane" value="{{ filters.query or '' }}">
+    </div>
+    <div>
+      <label for="state">State</label>
+      <select id="state" name="state">
+        <option value="">All states</option>
+        {% for state in filter_options.states %}
+          <option value="{{ state }}" {% if filters.state == state %}selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="segment">Segment</label>
+      <select id="segment" name="segment">
+        <option value="">All segments</option>
+        {% for segment in filter_options.segments %}
+          <option value="{{ segment }}" {% if filters.segment == segment %}selected{% endif %}>{{ segment }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="commodity">Commodity</label>
+      <select id="commodity" name="commodity">
+        <option value="">All commodities</option>
+        {% for commodity in filter_options.commodities %}
+          <option value="{{ commodity }}" {% if filters.commodity == commodity %}selected{% endif %}>{{ commodity }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="min_score">Minimum score</label>
+      <input id="min_score" name="min_score" type="number" min="0" max="100" value="{{ filters.min_score if filters.min_score is not none else '' }}">
+    </div>
+    <div>
+      <label for="readiness">Readiness</label>
+      <select id="readiness" name="readiness">
+        <option value="">Any readiness</option>
+        {% for readiness in filter_options.readinesses %}
+          <option value="{{ readiness }}" {% if filters.readiness == readiness %}selected{% endif %}>{{ readiness }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="button primary" type="submit">Apply Filters</button>
+      <a class="button" href="{{ url_for('opportunity_pipeline') }}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="scan-strip" aria-label="Pipeline summary">
+  <div class="scan-item positive"><span class="muted">Outreach prep</span><strong>{{ pipeline.summary.outreach_ready }}</strong></div>
+  <div class="scan-item review"><span class="muted">Site verification</span><strong>{{ pipeline.summary.site_verification }}</strong></div>
+  <div class="scan-item warning"><span class="muted">Site selection</span><strong>{{ pipeline.summary.site_selection }}</strong></div>
+  <div class="scan-item review"><span class="muted">Qualification</span><strong>{{ pipeline.summary.qualification }}</strong></div>
+  <div class="scan-item"><span class="muted">Monitor</span><strong>{{ pipeline.summary.monitor }}</strong></div>
+</section>
+
+<section class="stage-grid" aria-label="Opportunity stages">
+  {% for stage in pipeline.stages %}
+    <article class="stage-card">
+      <h3>{{ stage.label }} <span class="pill {{ stage.tone }}">{{ stage.count }}</span></h3>
+      <p class="muted">{{ stage.description }}</p>
+      {% if stage['items'] %}
+        {% for item in stage['items'] %}
+        <div class="work-item">
+          <div class="pill-row">
+            <span class="pill {{ item.readiness_tone }}">{{ item.readiness_label }}</span>
+            <span class="pill {{ score_tone(item.priority_score) }}">{{ item.priority_score }}/100</span>
+            {% if item.site_match_score %}<span class="pill {{ score_tone(item.site_match_score) }}">{{ item.site_match_score }}/100 site</span>{% endif %}
+            {% if item.external_use %}<span class="pill {{ item.external_use.tone }}">{{ item.external_use.status }}</span>{% endif %}
+          </div>
+          <h3><a href="{{ item.company_url }}">{{ item.company }}</a></h3>
+          <p><strong>Site:</strong> {{ item.site_name or 'No first-choice site selected' }}</p>
+          <p><strong>Why this stage:</strong> {{ item.explanation.blocker }}</p>
+          {% if item.external_use %}
+            <p class="muted"><strong>External use:</strong> {{ item.external_use.note }}</p>
+          {% endif %}
+          <p class="muted"><strong>To advance:</strong> {{ item.advance_action }}</p>
+          <div class="actions">
+            {% if item.primary_action %}<a class="button small primary" href="{{ item.primary_action.url }}">{{ item.primary_action.label }}</a>{% endif %}
+            {% for action in item.secondary_actions[:2] %}
+              <a class="button small" href="{{ action.url }}">{{ action.label }}</a>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty compact-empty">
+          <strong>No companies in this stage.</strong>
+          <div>Use the other stages or broaden filters in Ranked Companies to find the next active record.</div>
+        </div>
+      {% endif %}
+    </article>
+  {% endfor %}
+</section>
+{% endblock %}

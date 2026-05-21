@@ -30,6 +30,20 @@
   {% if comparison.recommended_first_choice %}
     <p><strong>Recommended first-choice site:</strong> {{ comparison.recommended_first_choice.site_name }} at {{ comparison.recommended_first_choice.compatibility_score }}/100 compatibility and {{ comparison.recommended_first_choice.lane_score }}/100 lane readiness.</p>
     <p><strong>Opportunity readiness:</strong> {{ comparison.recommended_first_choice.readiness_label }}. <strong>Research readiness:</strong> {{ comparison.recommended_first_choice.research_readiness_label }}.</p>
+    <p><strong>Next action:</strong> {{ comparison.recommended_first_choice.next_action }}</p>
+    {% if not comparison.recommended_first_choice.actionable %}
+      <div class="gap-note">
+        <strong>What blocks it:</strong> {{ comparison.recommended_first_choice.reason or 'Resolve the open verification tasks before outreach.' }}
+        {% if comparison.recommended_first_choice.blocked_count %}{{ comparison.recommended_first_choice.blocked_count }} blocker{{ 's' if comparison.recommended_first_choice.blocked_count != 1 else '' }} remain.{% endif %}
+      </div>
+      {% if comparison.recommended_first_choice.verification_tasks %}
+        <ul class="clean">
+          {% for task in comparison.recommended_first_choice.verification_tasks %}
+            <li>{{ task }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endif %}
     <ul class="clean">
       {% for reason in comparison.recommended_first_choice.why %}
         <li>{{ reason }}</li>

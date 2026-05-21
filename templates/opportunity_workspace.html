@@ -12,7 +12,8 @@
     <a class="button" href="{{ url_for('site_detail', site_name=workspace.site.site_name) }}">Site Profile</a>
     <a class="button primary" href="{{ url_for('company_site_comparison', company_name=workspace.company.company) }}">Compare Top Sites</a>
     <a class="button" href="{{ url_for('download_workspace_json', company=workspace.company.company, site=workspace.site.site_name) }}">Download JSON</a>
-    <a class="button" href="{{ url_for('download_workspace_txt', company=workspace.company.company, site=workspace.site.site_name) }}">Download Brief</a>
+    <a class="button" href="{{ url_for('workspace_brief_preview', company=workspace.company.company, site=workspace.site.site_name) }}">Export Brief</a>
+    <a class="button" href="{{ url_for('download_workspace_txt', company=workspace.company.company, site=workspace.site.site_name) }}">Download TXT</a>
   </div>
 </div>
 
@@ -24,6 +25,7 @@
     <div class="metric"><span class="muted">Lane readiness</span><strong>{{ workspace.lane.lane_score }}/100</strong><span class="pill {{ score_tone(workspace.lane.lane_score) }}">{{ workspace.lane.lane_readiness_label }}</span></div>
     <div class="metric"><span class="muted">Research readiness</span><strong>{{ workspace.research_readiness.score }}/100</strong><span class="pill {{ workspace.research_readiness.tone }}">{{ workspace.research_readiness.label }}</span></div>
     <div class="metric"><span class="muted">Opportunity readiness</span><strong>{{ workspace.opportunity_readiness.label }}</strong><span class="pill {{ workspace.opportunity_readiness.tone }}">{{ 'Actionable' if workspace.opportunity_readiness.actionable else 'Needs work' }}</span></div>
+    <div class="metric"><span class="muted">External use</span><strong>{{ workspace.external_use.status }}</strong><span class="pill {{ workspace.external_use.tone }}">{{ 'Human review' if workspace.external_use.human_review_required else 'Prep-ready' }}</span></div>
     <div class="metric"><span class="muted">State pair</span><strong>{{ workspace.company.state }} to {{ workspace.site.state }}</strong></div>
   </div>
 </section>
@@ -59,6 +61,19 @@
           <li>{{ reason }}</li>
         {% endfor %}
       </ul>
+    </section>
+
+    <section class="section">
+      <h2>Qualification Checklist</h2>
+      <p class="summary-note">Use this when the workspace says to validate material volumes, lane fit, and site requirements.</p>
+      <div class="breakdown">
+        {% for item in workspace.qualification_checklist %}
+          <div class="breakdown-row">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.action }}</strong>
+          </div>
+        {% endfor %}
+      </div>
     </section>
 
     <section class="section">
@@ -100,6 +115,21 @@
       <h2>Next Action</h2>
       <p>{{ workspace.opportunity_readiness.next_action }}</p>
       <p class="muted">{{ workspace.opportunity_readiness.reason }}</p>
+      <div class="actions">
+        {% if workspace.verification_tasks %}
+          <a class="button primary small" href="{{ url_for('site_detail', site_name=workspace.site.site_name) }}">Review Site</a>
+        {% else %}
+          <a class="button primary small" href="{{ url_for('workspace_brief_preview', company=workspace.company.company, site=workspace.site.site_name) }}">Export Brief</a>
+        {% endif %}
+        <a class="button small" href="{{ url_for('company_site_comparison', company_name=workspace.company.company) }}">Compare Sites</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>External Use Guardrail</h2>
+      <span class="pill {{ workspace.external_use.tone }}">{{ workspace.external_use.status }}</span>
+      <p>{{ workspace.external_use.note }}</p>
+      <p class="muted">Ready for outreach means ready to prepare the conversation. It does not replace source checks, contact validation, or human review.</p>
     </section>
 
     <section class="section">

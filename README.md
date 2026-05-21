@@ -301,31 +301,67 @@ Start the lightweight local dashboard for a scanable, browser-based view of rank
 
 ```bash
 cd "/Users/nickhibbard/Documents/New project/omnimapping"
-python3 dashboard.py
+python3 dashboard.py --port 5002
 ```
 
-Open `http://127.0.0.1:5000` in a browser. The dashboard keeps the CLI intact and uses the same data loading, scoring, search, site matching, and export helpers.
+Open `http://127.0.0.1:5002` in a browser. The dashboard keeps the CLI intact and uses the same data loading, scoring, search, site matching, and export helpers.
 
 Dashboard views:
 
-- Ranked companies with filters for state, segment, commodity, minimum score, and row limit.
+- Command Center landing page for a compact "today's work" list, saved workflow shortcuts, and packet export.
+- Opportunity Pipeline page that groups ranked companies by the next recommended action: outreach, site verification, site selection, qualification, or monitor.
+- Site Verification page that prioritizes site records with source, acreage, logistics, confidence, or review-status gaps.
+- Ranked companies with filters for state, segment, commodity, opportunity readiness, minimum score, and row limit.
 - Company profile pages with priority score, score breakdown, priority reasons, best recommended site, top site matches, risk, and next action.
-- Industrial site directory with filters for state, port access, transload availability, and source confidence.
+- Industrial site directory with filters for state, port access, transload availability, source confidence, review status, and confirmation needs.
 - Industrial site pages with site details, data confidence, last verified date, data gaps, a "Needs confirmation" indicator, and top compatible companies.
 - Opportunity Workspace pages that combine one company and one site into a decision-ready view with pair fit, risks/data gaps, talking points, and next action.
 - Company Site Comparison pages that rank the selected company's top compatible sites side by side, identify a first-choice site, show fit reasons and confirmation items, and link each site into the Opportunity Workspace.
-- CSV, JSON, and TXT download actions for ranked company lists, company reports, site reports, company site comparisons, workspace JSON, and workspace outreach briefs.
+- CSV, JSON, and TXT download actions for ranked company lists, company reports, site reports, company site comparisons, workspace JSON, workspace outreach briefs, and the Command Center opportunity packet.
+
+Useful dashboard entry points with the `--port 5002` command:
+
+- `http://127.0.0.1:5002/` for the Command Center.
+- `http://127.0.0.1:5002/pipeline` for the Opportunity Pipeline.
+- `http://127.0.0.1:5002/verification` for Site Verification.
+- `http://127.0.0.1:5002/downloads/opportunity-packet.txt` for the plain-text opportunity packet.
+
+### Verifying a site
+
+Use Site Verification when a company is promising but the matched site is not ready for outreach:
+
+1. Open `/verification`.
+2. Choose **Review Site** for the site with the highest-impact task.
+3. In **Review Status**, update the status and fill the source URL, source confidence, last verified date, acreage, access fields, and remaining data-gap notes.
+4. Save the review. The site page shows a success message with the saved review status, research readiness, remaining blocker count, and whether the site is usable for outreach.
+5. Return to `/pipeline` or `/verification` to confirm the site moved out of the queue when blockers are resolved.
+
+**Confirmed** means the local review status has been saved for the site. It does not automatically mean the site is ready for outreach.
+
+**Research Ready** means the current research checklist has no blocking source, date, acreage, or logistics tasks open. A confirmed site can still remain in Site Verification when the checklist is missing items such as source confidence, last verified date, acreage, rail/access details, owner/contact, utilities, zoning, or unresolved data-gap notes.
+
+An opportunity is ready for outreach prep when the pipeline shows **Ready for outreach** and the selected workspace has no verification tasks. That is still an internal workflow signal, not permission to send an external message. The workspace, JSON export, TXT brief, and Outreach Handoff include an **External use** guardrail that can still require human review for speculative prospect language, contact validation, timing, and source checks. Saved reviews are stored locally in `data/review_status.json`; they overlay the dashboard and exports without rewriting the source CSV files.
+
+### Moving an opportunity toward outreach
+
+Use the pipeline stages as the working sequence:
+
+1. Start at `/pipeline`.
+2. For **Verify site first**, open the site review and clear the listed blockers.
+3. For **Compare sites**, open the comparison view and pick the strongest usable site.
+4. For **Qualify fit**, open the workspace and confirm timing, material flows, and lane fit.
+5. For **Ready for outreach**, open the workspace and export the brief or packet.
 
 To open a workspace directly, use:
 
 ```text
-http://127.0.0.1:5000/workspace?company=Nucor&site=Savannah%20Gateway%20Industrial%20Hub
+http://127.0.0.1:5002/workspace?company=Nucor&site=Savannah%20Gateway%20Industrial%20Hub
 ```
 
 To compare top site matches for one company, open the company profile and choose **Compare Top Sites**, or use:
 
 ```text
-http://127.0.0.1:5000/companies/Nucor/site-comparison
+http://127.0.0.1:5002/companies/Nucor/site-comparison
 ```
 
 The comparison page includes JSON and CSV download buttons for the comparison payload and table.
@@ -397,10 +433,10 @@ python3 main.py --list-sites
 ```bash
 python3 -m unittest discover -s tests
 ```
-11. Optional: run the full verification and test checks together before sharing changes:
+11. Optional: run the full verification, dashboard smoke test, and unit checks together before sharing changes:
 
 ```bash
-python3 main.py --verify && python3 -m unittest discover -s tests
+./scripts/check.sh
 ```
 12. Run the application interactively:
 
